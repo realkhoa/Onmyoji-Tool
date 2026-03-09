@@ -1,0 +1,105 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer directories
+__pypackages__/
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+nosetests.xml
+coverage.xml
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+
+# Rope
+.ropeproject
+
+# mypy
+.mypy_cache/
+
+# Profiling
+.prof
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor backups
+*~
+
+# Logs
+logs/
+
+# Build artifacts
+*.egg
+*.whl
+
+# Secret keys, certs
+*.pem
+*.key
+
+# Mac/system files
+._*
+
+# Node/npm
+node_modules/
+
+# Enforce not ignoring images used by the bot (keep templates tracked)
+# images/
