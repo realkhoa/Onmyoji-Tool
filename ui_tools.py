@@ -366,6 +366,18 @@ class GuildRealmRaidTab(FeatureTab):
         )
 
 
+class PersonalRealmRaidTab(FeatureTab):
+    def __init__(self, parent=None):
+        super().__init__(
+            title="⚔ Phá kết giới cá nhân",
+            description=(
+                "Tự động phá kết giới chế độ cá nhân. Script mặc định: dsl/builtin/personal_realm_raid.dsl"
+            ),
+            default_dsl="dsl/builtin/personal_realm_raid.dsl",
+            parent=parent,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Tab: Placeholder cho các tính năng tương lai
 # ---------------------------------------------------------------------------
@@ -496,9 +508,9 @@ class ToolsWindow(QMainWindow):
 
         # Feature tabs
         self._tab_guild = GuildRealmRaidTab()
-        self._add_feature_tab(self._tab_guild, "⚔ Kết giới")
-        self._tabs.addTab(ComingSoonTab("Auto Farm"), "🌾 Farm")
-        self._tabs.addTab(ComingSoonTab("Auto Quest"), "📋 Quest")
+        self._add_feature_tab(self._tab_guild, "⚔ Kết giới Guild")
+        self._tab_personal = PersonalRealmRaidTab()
+        self._add_feature_tab(self._tab_personal, "⚔ Kết giới Cá nhân")        
         self._tabs.addTab(ComingSoonTab("Tính năng khác"), "➕ Khác")
 
         right_layout.addWidget(self._tabs, 1)
