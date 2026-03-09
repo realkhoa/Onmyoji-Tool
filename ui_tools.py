@@ -14,12 +14,15 @@ import numpy as np
 import win32gui
 import win32process
 import psutil
+import win32api
+import win32con
+import shutil
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QTabWidget, QTextEdit, QGroupBox,
     QSplitter, QFileDialog, QCheckBox, QFrame, QSizePolicy,
-    QSpacerItem, QProgressBar
+    QSpacerItem, QProgressBar, QSpinBox, QDoubleSpinBox, QComboBox, QListWidget, QLineEdit, QListWidgetItem
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QMutex, QMutexLocker, QRect, QSize
 from PyQt5.QtGui import QImage, QPixmap, QFont, QColor, QTextCursor, QPainter, QPalette
@@ -29,6 +32,201 @@ from dsl_engine import DSLEngine
 
 DSL_DIR = Path(__file__).parent
 GAME_WINDOW_KEYWORDS = ["陰陽師Onmyoji"]
+
+# ---------------------------------------------------------------------------
+# Global stylesheet – Spotify dark theme
+# ---------------------------------------------------------------------------
+# Palette constants (keep in sync with apply_dark_palette below)
+_BG       = "#121212"   # deepest background
+_SURFACE  = "#181818"   # card / group background
+_ELEVATED = "#282828"   # inputs, raised surfaces
+_BORDER   = "#3e3e3e"   # subtle border
+_ACCENT   = "#1db954"   # Spotify green
+_ACCENT_H = "#1ed760"   # green hover
+_TEXT_PRI = "#ffffff"
+_TEXT_SEC = "#b3b3b3"
+_TEXT_MUT = "#6a6a6a"
+_DANGER   = "#e22134"
+
+APP_STYLE = """
+* { font-family: 'Segoe UI'; font-size: 10pt; color: #ffffff; }
+
+QMainWindow, QDialog { background: #121212; }
+QWidget { background: transparent; }
+
+/* ── Inputs ─────────────────────────────────────────────────── */
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+    background: #282828;
+    border: 1px solid #3e3e3e;
+    border-radius: 4px;
+    padding: 4px 8px;
+    min-height: 28px;
+    color: #ffffff;
+    selection-background-color: #1db954;
+    selection-color: #000000;
+}
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
+    border: 2px solid #1db954;
+    padding: 3px 7px;
+}
+QComboBox::drop-down { border: none; width: 22px; }
+QComboBox::down-arrow { width: 10px; height: 10px; }
+QComboBox QAbstractItemView {
+    background: #282828; border: 1px solid #3e3e3e;
+    selection-background-color: #1db954; selection-color: #000; color: #fff;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────── */
+QPushButton {
+    background: #282828;
+    border: 1px solid #3e3e3e;
+    border-radius: 20px;
+    padding: 5px 16px;
+    min-height: 28px;
+    color: #ffffff;
+}
+QPushButton:hover  { background: #333333; border-color: #1db954; color: #1db954; }
+QPushButton:pressed{ background: #1db954; border-color: #1db954; color: #000000; }
+QPushButton:disabled { background: #1a1a1a; border-color: #2a2a2a; color: #535353; }
+
+QPushButton#btn_primary {
+    background: #1db954; border: 1px solid #1db954; color: #000000; font-weight: 700;
+    border-radius: 20px;
+}
+QPushButton#btn_primary:hover   { background: #1ed760; border-color: #1ed760; }
+QPushButton#btn_primary:pressed { background: #169c46; }
+
+QPushButton#btn_success {
+    background: #1db954; border: 1px solid #1db954; color: #000000; font-weight: 700;
+    border-radius: 20px;
+}
+QPushButton#btn_success:hover   { background: #1ed760; border-color: #1ed760; }
+QPushButton#btn_success:pressed { background: #169c46; }
+QPushButton#btn_success:disabled { background: #1a3d27; border-color: #1a3d27; color: #4a7a5a; }
+
+QPushButton#btn_danger {
+    background: #e22134; border: 1px solid #e22134; color: #ffffff; font-weight: 700;
+    border-radius: 20px;
+}
+QPushButton#btn_danger:hover   { background: #c91d2c; border-color: #c91d2c; }
+QPushButton#btn_danger:pressed { background: #a0161f; }
+
+/* ── Tabs ────────────────────────────────────────────────────── */
+QTabWidget::pane {
+    border: none;
+    border-top: 1px solid #333333;
+    background: #181818;
+}
+QTabBar {
+    background: #121212;
+}
+QTabBar::tab {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 10px 22px;
+    color: #b3b3b3;
+    font: 10pt 'Segoe UI';
+}
+QTabBar::tab:hover:!selected { color: #ffffff; border-bottom: 2px solid #535353; }
+QTabBar::tab:selected {
+    color: #ffffff;
+    font-weight: 700;
+    border-bottom: 2px solid #1db954;
+}
+
+/* ── GroupBox ────────────────────────────────────────────────── */
+QGroupBox {
+    font-weight: 600;
+    color: #b3b3b3;
+    border: 1px solid #333333;
+    border-radius: 8px;
+    margin-top: 10px;
+    padding-top: 8px;
+    background: #181818;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 10px;
+    padding: 0 5px;
+    color: #1db954;
+}
+
+/* ── List ────────────────────────────────────────────────────── */
+QListWidget {
+    background: #282828;
+    border: 1px solid #333333;
+    border-radius: 6px;
+    outline: none;
+    color: #ffffff;
+}
+QListWidget::item { padding: 5px 10px; color: #ffffff; }
+QListWidget::item:hover    { background: #333333; }
+QListWidget::item:selected { background: #1db954; color: #000000; }
+
+/* ── Text areas ──────────────────────────────────────────────── */
+QTextEdit, QPlainTextEdit {
+    background: #282828;
+    border: 1px solid #333333;
+    border-radius: 6px;
+    color: #ffffff;
+    font-family: 'Consolas';
+    font-size: 9pt;
+}
+
+/* ── CheckBox ────────────────────────────────────────────────── */
+QCheckBox { spacing: 6px; color: #b3b3b3; }
+QCheckBox::indicator {
+    width: 16px; height: 16px;
+    border: 2px solid #535353;
+    border-radius: 3px;
+    background: #282828;
+}
+QCheckBox::indicator:hover   { border-color: #1db954; }
+QCheckBox::indicator:checked { background: #1db954; border-color: #1db954; }
+
+/* ── Splitter ────────────────────────────────────────────────── */
+QSplitter::handle:horizontal {
+    width: 1px; background: #333333;
+}
+QSplitter::handle:horizontal:hover { background: #1db954; }
+
+/* ── ScrollBar ───────────────────────────────────────────────── */
+QScrollBar:vertical {
+    background: #121212; width: 6px; margin: 0;
+}
+QScrollBar::handle:vertical {
+    background: #535353; border-radius: 3px; min-height: 20px;
+}
+QScrollBar::handle:vertical:hover { background: #1db954; }
+QScrollBar::add-line, QScrollBar::sub-line { height: 0; }
+QScrollBar:horizontal {
+    background: #121212; height: 6px; margin: 0;
+}
+QScrollBar::handle:horizontal {
+    background: #535353; border-radius: 3px; min-width: 20px;
+}
+QScrollBar::handle:horizontal:hover { background: #1db954; }
+
+/* ── ToolTip ─────────────────────────────────────────────────── */
+QToolTip {
+    background: #282828; border: 1px solid #535353;
+    color: #ffffff; padding: 4px 8px; border-radius: 4px;
+}
+
+/* ── Status label (named widget) ─────────────────────────────── */
+QLabel#status_lbl {
+    background: #1a1a1a;
+    border: 1px solid #333333;
+    border-radius: 4px;
+    padding: 4px 12px;
+    font-weight: 600;
+}
+
+/* ── Label secondary ─────────────────────────────────────────── */
+QLabel { color: #ffffff; }
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -60,19 +258,20 @@ def find_game_window() -> str | None:
 
 class PreviewLabel(QLabel):
     coord_changed = pyqtSignal(int, int)
+    coord_selected = pyqtSignal(int, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumSize(280, 158)
         self.setAlignment(Qt.AlignCenter)
-        self.setStyleSheet("background:#1e1e2e; border:1px solid #444; border-radius:4px;")
+        self.setStyleSheet("background:#1a1a1a; border:1px solid #333333; border-radius:6px;")
         self.setMouseTracking(True)
         self._pixmap: QPixmap | None = None
         self._frame_w = self._frame_h = 0
 
         self._coord_label = QLabel(self)
         self._coord_label.setStyleSheet(
-            "background:rgba(0,0,0,180); color:#00ff88; padding:2px 6px;"
+            "background:rgba(0,0,0,180); color:#1db954; padding:2px 6px;"
             "font:bold 10px 'Consolas'; border-radius:3px;"
         )
         self._coord_label.hide()
@@ -112,6 +311,12 @@ class PreviewLabel(QLabel):
         else:
             self._coord_label.hide()
         super().mouseMoveEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        coords = self._to_game(event.pos())
+        if coords:
+            self.coord_selected.emit(*coords)
+        super().mouseDoubleClickEvent(event)
 
     def leaveEvent(self, event):
         self._coord_label.hide()
@@ -168,16 +373,16 @@ class LogWidget(QTextEdit):
         self.setReadOnly(True)
         self.setFont(QFont("Consolas", 9))
         self.setMaximumHeight(140)
-        self.setStyleSheet("background:#12121d; border:none;")
+        self.setStyleSheet("background:#282828; border:none;")
 
-    def append_log(self, msg: str, color: str = "#cdd6f4"):
+    def append_log(self, msg: str, color: str = "#b3b3b3"):
         ts = time.strftime("%H:%M:%S")
-        self.append(f'<span style="color:#555">[{ts}]</span> <span style="color:{color}">{msg}</span>')
+        self.append(f'<span style="color:#6a6a6a">[{ts}]</span> <span style="color:{color}">{msg}</span>')
         self.moveCursor(QTextCursor.End)
 
-    def append_ok(self, msg): self.append_log(msg, "#a6e3a1")
-    def append_err(self, msg): self.append_log(msg, "#f38ba8")
-    def append_info(self, msg): self.append_log(msg, "#89b4fa")
+    def append_ok(self, msg): self.append_log(msg, "#1db954")
+    def append_err(self, msg): self.append_log(msg, "#e22134")
+    def append_info(self, msg): self.append_log(msg, "#4da6ff")
 
 
 # ---------------------------------------------------------------------------
@@ -207,25 +412,25 @@ class FeatureTab(QWidget):
         # ── Header ──────────────────────────────────────────────────
         header = QLabel(self.title)
         header.setFont(QFont("Segoe UI", 15, QFont.Bold))
-        header.setStyleSheet("color:#cba6f7;")
+        header.setStyleSheet("color:#1db954; letter-spacing:0.5px;")
         root.addWidget(header)
 
         desc_lbl = QLabel(description)
         desc_lbl.setWordWrap(True)
-        desc_lbl.setStyleSheet("color:#a6adc8; font-size:11px;")
+        desc_lbl.setStyleSheet("color:#b3b3b3; font-size:11px;")
         root.addWidget(desc_lbl)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("color:#313244;")
+        sep.setStyleSheet("background:#333333; max-height:1px;")
         root.addWidget(sep)
 
         # ── DSL file selector ────────────────────────────────────────
         file_row = QHBoxLayout()
         self._file_lbl = QLabel(self._dsl_file.name if self._dsl_file.exists() else "Chưa chọn file")
         self._file_lbl.setStyleSheet(
-            "background:#1e1e2e; border:1px solid #45475a; border-radius:4px;"
-            "padding:4px 8px; color:#cdd6f4; font:10px 'Consolas';"
+            "background:#282828; border:1px solid #3e3e3e; border-radius:4px;"
+            "padding:4px 8px; color:#b3b3b3; font:10px 'Consolas';"
         )
         self._file_lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         file_row.addWidget(self._file_lbl)
@@ -240,28 +445,16 @@ class FeatureTab(QWidget):
         btn_layout = QHBoxLayout()
 
         self._btn_start = QPushButton("▶  Bắt đầu")
-        self._btn_start.setFixedHeight(48)
-        self._btn_start.setFont(QFont("Segoe UI", 13, QFont.Bold))
-        self._btn_start.setStyleSheet("""
-            QPushButton {
-                background:#2d8c4e; color:white; border-radius:8px;
-            }
-            QPushButton:hover { background:#3aad61; }
-            QPushButton:pressed { background:#206636; }
-        """)
+        self._btn_start.setFixedHeight(40)
+        self._btn_start.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        self._btn_start.setObjectName("btn_success")
         self._btn_start.clicked.connect(self._start)
         btn_layout.addWidget(self._btn_start)
 
         self._btn_stop = QPushButton("■  Dừng lại")
-        self._btn_stop.setFixedHeight(48)
-        self._btn_stop.setFont(QFont("Segoe UI", 13, QFont.Bold))
-        self._btn_stop.setStyleSheet("""
-            QPushButton {
-                background:#c0392b; color:white; border-radius:8px;
-            }
-            QPushButton:hover { background:#e74c3c; }
-            QPushButton:pressed { background:#922b21; }
-        """)
+        self._btn_stop.setFixedHeight(40)
+        self._btn_stop.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        self._btn_stop.setObjectName("btn_danger")
         self._btn_stop.clicked.connect(self._stop)
         self._btn_stop.hide()
         btn_layout.addWidget(self._btn_stop)
@@ -269,10 +462,8 @@ class FeatureTab(QWidget):
 
         # ── Status bar ───────────────────────────────────────────────
         self._status_lbl = QLabel("Sẵn sàng")
-        self._status_lbl.setStyleSheet(
-            "background:#313244; border-radius:4px; padding:4px 10px;"
-            "color:#a6e3a1; font:bold 11px 'Segoe UI';"
-        )
+        self._status_lbl.setObjectName("status_lbl")
+        self._status_lbl.setStyleSheet("color:#1db954; font-weight:600;")
         self._status_lbl.setAlignment(Qt.AlignCenter)
         root.addWidget(self._status_lbl)
 
@@ -295,22 +486,21 @@ class FeatureTab(QWidget):
             self._dsl_file = Path(path)
             self._file_lbl.setText(self._dsl_file.name)
 
-    def _set_status(self, msg: str, color: str = "#a6e3a1"):
+    def _set_status(self, msg: str, color: str = "#1db954"):
         self._status_lbl.setText(msg)
-        self._status_lbl.setStyleSheet(
-            f"background:#313244; border-radius:4px; padding:4px 10px;"
-            f"color:{color}; font:bold 11px 'Segoe UI';"
+        self._status_lbl.setStyleSheet(f"color:{color}; font-weight:600;"
         )
 
     def _start(self):
         if self._running:
             return
+        # ensure we load a user-editable copy of builtin DSL templates
         if not self._dsl_file.exists():
-            self._set_status("⚠ Không tìm thấy file DSL!", "#f38ba8")
+            self._set_status("⚠ Không tìm thấy file DSL!", "#e22134")
             self.log_signal.emit(f"[{self.title}] File không tồn tại: {self._dsl_file}")
             return
         if self._engine._capture is None:
-            self._set_status("⚠ Chưa attach cửa sổ game!", "#f38ba8")
+            self._set_status("⚠ Chưa attach cửa sổ game!", "#e22134")
             self.log_signal.emit(f"[{self.title}] Chưa attach cửa sổ game.")
             return
 
@@ -319,7 +509,7 @@ class FeatureTab(QWidget):
         self._engine.reset_stop()
         self._btn_start.hide()
         self._btn_stop.show()
-        self._set_status("⟳ Đang chạy...", "#89b4fa")
+        self._set_status("⟳ Đang chạy...", "#1db954")
         self.started_signal.emit()
         self._worker = threading.Thread(target=self._run, args=(script,), daemon=True)
         self._worker.start()
@@ -336,10 +526,11 @@ class FeatureTab(QWidget):
             self._running = False
             self._on_stopped()
 
+
     def _on_stopped(self):
         self._btn_stop.hide()
         self._btn_start.show()
-        self._set_status("Đã dừng", "#f38ba8")
+        self._set_status("Đã dừng", "#e22134")
         self.stopped_signal.emit()
 
     def _stop(self):
@@ -361,7 +552,7 @@ class GuildRealmRaidTab(FeatureTab):
                 "Tự động tham gia và tấn công kết giới trong Guild Realm Raid (Phá kết giới). "
                 "Script mặc định: guild_realm_raid.dsl"
             ),
-            default_dsl="guild_realm_raid.dsl",
+            default_dsl="dsl/builtin/guild_realm_raid.dsl",
             parent=parent,
         )
 
@@ -376,6 +567,312 @@ class PersonalRealmRaidTab(FeatureTab):
             default_dsl="dsl/builtin/personal_realm_raid.dsl",
             parent=parent,
         )
+
+
+class AutoClickTab(QWidget):
+    log_signal = pyqtSignal(str)
+    started_signal = pyqtSignal()
+    stopped_signal = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._capture: WindowCapture | None = None
+        self._engine = DSLEngine()
+        self._running = False
+        self._stop_evt = threading.Event()
+        self._worker: threading.Thread | None = None
+        self._build_ui()
+
+    def _build_ui(self):
+        root = QVBoxLayout(self)
+        root.setSpacing(8)
+        root.setContentsMargins(12, 12, 12, 12)
+
+        header = QLabel("🖱 Auto Click")
+        header.setFont(QFont("Segoe UI", 15, QFont.Bold))
+        header.setStyleSheet("color:#1db954; letter-spacing:0.5px;")
+        root.addWidget(header)
+
+        desc = QLabel("Click tự động vào tọa độ đã chọn (hỗ trợ lấy tọa độ từ preview hoặc lấy trực tiếp từ cửa sổ game). Double-click preview để lấy tọa độ.")
+        desc.setWordWrap(True)
+        desc.setStyleSheet("color:#b3b3b3; font-size:11px;")
+        root.addWidget(desc)
+
+        # Coordinate row
+        coord_row = QHBoxLayout()
+        self._spin_x = QSpinBox()
+        self._spin_x.setRange(0, 10000)
+        self._spin_x.setPrefix("X: ")
+        self._spin_y = QSpinBox()
+        self._spin_y.setRange(0, 10000)
+        self._spin_y.setPrefix("Y: ")
+        coord_row.addWidget(self._spin_x)
+        coord_row.addWidget(self._spin_y)
+
+        self._btn_pick_game = QPushButton("🔎 Lấy từ game")
+        self._btn_pick_game.clicked.connect(self._pick_from_game)
+        coord_row.addWidget(self._btn_pick_game)
+        root.addLayout(coord_row)
+
+        hint = QLabel("(Hoặc double-click vào preview để lấy tọa độ)")
+        hint.setStyleSheet("color:#6a6a6a; font-size:11px;")
+        root.addWidget(hint)
+
+        # Condition row (per-point)
+        cond_row = QHBoxLayout()
+        cond_row.addWidget(QLabel("If image (optional):"))
+        self._cond_img = QLineEdit()
+        self._cond_img.setPlaceholderText("images/example.png")
+        cond_row.addWidget(self._cond_img, 1)
+        self._btn_browse_img = QPushButton("Browse")
+        self._btn_browse_img.setFixedWidth(80)
+        self._btn_browse_img.clicked.connect(self._browse_image)
+        cond_row.addWidget(self._btn_browse_img)
+        cond_row.addWidget(QLabel("Thresh:"))
+        self._cond_thresh = QDoubleSpinBox()
+        self._cond_thresh.setRange(0.0, 1.0)
+        self._cond_thresh.setSingleStep(0.01)
+        self._cond_thresh.setValue(0.8)
+        self._cond_thresh.setFixedWidth(100)
+        cond_row.addWidget(self._cond_thresh)
+        root.addLayout(cond_row)
+
+        # Points list (sequence)
+        seq_row = QHBoxLayout()
+        self._list_points = QListWidget()
+        self._list_points.setFixedHeight(140)
+        seq_row.addWidget(self._list_points, 1)
+
+        seq_btns = QVBoxLayout()
+        self._btn_add = QPushButton("➕ Thêm")
+        self._btn_add.clicked.connect(self._add_point)
+        seq_btns.addWidget(self._btn_add)
+        self._btn_remove = QPushButton("➖ Xóa")
+        self._btn_remove.clicked.connect(self._remove_point)
+        seq_btns.addWidget(self._btn_remove)
+        self._btn_clear = QPushButton("🧹 Xóa hết")
+        self._btn_clear.clicked.connect(self._clear_points)
+        seq_btns.addWidget(self._btn_clear)
+        seq_btns.addStretch()
+        seq_row.addLayout(seq_btns)
+        root.addLayout(seq_row)
+
+        # Options row
+        opts = QHBoxLayout()
+        opts.addWidget(QLabel("Button:"))
+        self._cmb_button = QComboBox()
+        self._cmb_button.addItems(["Left", "Right"])
+        opts.addWidget(self._cmb_button)
+
+        opts.addSpacing(8)
+        opts.addWidget(QLabel("Interval(s):"))
+        self._spin_interval = QDoubleSpinBox()
+        self._spin_interval.setRange(0.01, 3600.0)
+        self._spin_interval.setSingleStep(0.1)
+        self._spin_interval.setValue(1.0)
+        opts.addWidget(self._spin_interval)
+
+        opts.addSpacing(8)
+        opts.addWidget(QLabel("Repeat (0=infinite):"))
+        self._spin_repeat = QSpinBox()
+        self._spin_repeat.setRange(0, 1000000)
+        self._spin_repeat.setValue(0)
+        opts.addWidget(self._spin_repeat)
+
+        root.addLayout(opts)
+
+        # Start/Stop
+        btn_row = QHBoxLayout()
+        self._btn_start = QPushButton("▶  Bắt đầu")
+        self._btn_start.setFixedHeight(40)
+        self._btn_start.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        self._btn_start.setObjectName("btn_success")
+        self._btn_start.clicked.connect(self._start)
+        btn_row.addWidget(self._btn_start)
+        self._btn_stop = QPushButton("■  Dừng lại")
+        self._btn_stop.setFixedHeight(40)
+        self._btn_stop.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        self._btn_stop.setObjectName("btn_danger")
+        self._btn_stop.clicked.connect(self._stop)
+        self._btn_stop.hide()
+        btn_row.addWidget(self._btn_stop)
+        root.addLayout(btn_row)
+
+        self._status_lbl = QLabel("Sẵn sàng")
+        self._status_lbl.setStyleSheet("color:#1db954; font-weight:600;")
+        root.addWidget(self._status_lbl)
+
+    def set_capture(self, cap: WindowCapture | None):
+        self._capture = cap
+        self._engine.set_capture(cap)
+
+    def set_last_frame(self, frame: np.ndarray):
+        pass
+
+    def on_preview_selected(self, x: int, y: int):
+        self._spin_x.setValue(x)
+        self._spin_y.setValue(y)
+        self.log_signal.emit(f"Picked from preview: ({x},{y})")
+
+    def _pick_from_game(self):
+        if self._capture is None:
+            self.log_signal.emit("⚠ Chưa attach cửa sổ game!")
+            return
+        self.log_signal.emit("Nhấn vào cửa sổ game để lấy tọa độ...")
+
+        def waiter():
+            # wait for a mouse click in the system, then read cursor
+            prev_state = 0
+            while True:
+                if self._stop_evt.is_set():
+                    return
+                state = win32api.GetAsyncKeyState(win32con.VK_LBUTTON) & 0x8000
+                if state and not prev_state:
+                    pos = win32gui.GetCursorPos()
+                    try:
+                        client = win32gui.ScreenToClient(self._capture.hwnd, pos)
+                    except Exception:
+                        client = pos
+                    x, y = int(client[0]), int(client[1])
+                    self._spin_x.setValue(x)
+                    self._spin_y.setValue(y)
+                    self.log_signal.emit(f"Picked from game: ({x},{y})")
+                    return
+                prev_state = state
+                time.sleep(0.01)
+
+        t = threading.Thread(target=waiter, daemon=True)
+        t.start()
+
+    def _start(self):
+        if self._running:
+            return
+        if self._capture is None:
+            self.log_signal.emit("⚠ Chưa attach cửa sổ game!")
+            return
+        x = int(self._spin_x.value())
+        y = int(self._spin_y.value())
+        btn = self._cmb_button.currentText()
+        interval = float(self._spin_interval.value())
+        repeat = int(self._spin_repeat.value())
+
+        self._running = True
+        self._stop_evt.clear()
+        self._btn_start.hide()
+        self._btn_stop.show()
+        self.started_signal.emit()
+        self._status_lbl.setText("⟳ Đang chạy...")
+
+        def runner():
+            cnt = 0
+            # build sequence from list; if empty use single point
+            seq = self._get_sequence_points()
+            if not seq:
+                seq = [(x, y)]
+            while not self._stop_evt.is_set():
+                if repeat > 0 and cnt >= repeat:
+                    break
+                # iterate through sequence
+                for px, py, pimg, pth in seq:
+                    if self._stop_evt.is_set():
+                        break
+                    # check per-point condition if any
+                    if pimg:
+                        found = self._engine._find_template(pimg, pth) is not None
+                        if not found:
+                            self.log_signal.emit(f"Skip ({px},{py}) — condition not met: {pimg}")
+                            continue
+                    lparam = win32api.MAKELONG(px, py)
+                    if btn.lower().startswith("left"):
+                        win32gui.PostMessage(self._capture.hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lparam)
+                        time.sleep(0.02)
+                        win32gui.PostMessage(self._capture.hwnd, win32con.WM_LBUTTONUP, 0, lparam)
+                    else:
+                        win32gui.PostMessage(self._capture.hwnd, win32con.WM_RBUTTONDOWN, win32con.MK_RBUTTON, lparam)
+                        time.sleep(0.02)
+                        win32gui.PostMessage(self._capture.hwnd, win32con.WM_RBUTTONUP, 0, lparam)
+                    self.log_signal.emit(f"Clicked ({px},{py}) [{btn}]")
+                    # sleep interval but check stop event
+                    slept = 0.0
+                    while slept < interval:
+                        if self._stop_evt.is_set():
+                            break
+                        time.sleep(min(0.1, interval - slept))
+                        slept += 0.1
+                cnt += 1
+            self._running = False
+            self._on_stopped()
+
+        self._worker = threading.Thread(target=runner, daemon=True)
+        self._worker.start()
+
+    def _on_stopped(self):
+        self._btn_stop.hide()
+        self._btn_start.show()
+        self._status_lbl.setText("Đã dừng")
+        self.stopped_signal.emit()
+
+    def _stop(self):
+        self._stop_evt.set()
+        self._running = False
+        self._on_stopped()
+        self.log_signal.emit("AutoClick đã dừng.")
+
+    # ---- sequence helpers ----
+    def _add_point(self):
+        x = int(self._spin_x.value())
+        y = int(self._spin_y.value())
+        cond_img = self._cond_img.text().strip()
+        if cond_img == "":
+            cond_img = None
+        thresh = float(self._cond_thresh.value())
+        text = f"{x},{y}"
+        if cond_img:
+            text += f"  | if {cond_img} >= {thresh}"
+        item = QListWidgetItem(text)
+        item.setData(Qt.UserRole, (x, y, cond_img, thresh))
+        self._list_points.addItem(item)
+        self.log_signal.emit(f"Added point: ({x},{y})")
+
+    def _remove_point(self):
+        cur = self._list_points.currentRow()
+        if cur >= 0:
+            item = self._list_points.takeItem(cur)
+            self.log_signal.emit(f"Removed point: {item.text()}")
+
+    def _clear_points(self):
+        self._list_points.clear()
+        self.log_signal.emit("Cleared points list")
+
+    def _browse_image(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Chọn ảnh template", str(DSL_DIR / 'images'), "PNG Files (*.png);;All Files (*)")
+        if path:
+            try:
+                base = str(DSL_DIR / 'images')
+                if path.startswith(base):
+                    rel = Path(path).relative_to(DSL_DIR / 'images')
+                    self._cond_img.setText(str(rel).replace('\\', '/'))
+                else:
+                    self._cond_img.setText(path)
+            except Exception:
+                self._cond_img.setText(path)
+
+    def _get_sequence_points(self) -> list[tuple[int, int]]:
+        pts = []
+        for i in range(self._list_points.count()):
+            item = self._list_points.item(i)
+            data = item.data(Qt.UserRole)
+            if data and isinstance(data, tuple) and len(data) == 4:
+                px, py, img, thresh = data
+                pts.append((int(px), int(py), img, float(thresh)))
+            else:
+                txt = item.text()
+                try:
+                    px, py = txt.split(",")
+                    pts.append((int(px), int(py), None, 0.8))
+                except Exception:
+                    continue
+        return pts
 
 
 # ---------------------------------------------------------------------------
@@ -394,7 +891,7 @@ class ComingSoonTab(QWidget):
         lbl = QLabel(f"{feature_name}\nĐang phát triển...")
         lbl.setFont(QFont("Segoe UI", 13))
         lbl.setAlignment(Qt.AlignCenter)
-        lbl.setStyleSheet("color:#6c7086;")
+        lbl.setStyleSheet("color:#b3b3b3;")
         layout.addWidget(lbl)
 
 
@@ -432,33 +929,39 @@ class ToolsWindow(QMainWindow):
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(6)
 
-        # ── Top bar: game status ─────────────────────────────────────
-        top_bar = QHBoxLayout()
+        # ── Connection status banner ─────────────────────────────────
+        self._conn_bar = QFrame()
+        self._conn_bar.setObjectName("conn_bar")
+        self._conn_bar.setStyleSheet(
+            "QFrame#conn_bar { background:#181818; border-bottom:1px solid #333333; }"
+        )
+        self._conn_bar.setFixedHeight(44)
+        cb_layout = QHBoxLayout(self._conn_bar)
+        cb_layout.setContentsMargins(12, 0, 12, 0)
+        cb_layout.setSpacing(10)
 
-        # Indicator dot + tên cửa sổ
         self._dot = QLabel("●")
-        self._dot.setFont(QFont("Segoe UI", 14))
-        self._dot.setStyleSheet("color:#f38ba8;")
-        self._dot.setFixedWidth(22)
-        top_bar.addWidget(self._dot)
+        self._dot.setFont(QFont("Segoe UI", 16))
+        self._dot.setStyleSheet("color:#e22134;")
+        self._dot.setFixedWidth(24)
+        cb_layout.addWidget(self._dot)
 
         self._window_lbl = QLabel("Chưa tìm thấy cửa sổ game")
-        self._window_lbl.setFont(QFont("Segoe UI", 10, QFont.Bold))
-        self._window_lbl.setStyleSheet("color:#a6adc8;")
-        top_bar.addWidget(self._window_lbl, 1)
+        self._window_lbl.setFont(QFont("Segoe UI", 10))
+        self._window_lbl.setStyleSheet("color:#6a6a6a;")
+        cb_layout.addWidget(self._window_lbl, 1)
 
         self._chk_auto = QCheckBox("Tự động kết nối")
         self._chk_auto.setChecked(True)
-        self._chk_auto.setStyleSheet("color:#cdd6f4;")
         self._chk_auto.stateChanged.connect(self._on_auto_toggle)
-        top_bar.addWidget(self._chk_auto)
+        cb_layout.addWidget(self._chk_auto)
 
         self._btn_manual_attach = QPushButton("🔗 Kết nối ngay")
         self._btn_manual_attach.setFixedHeight(28)
         self._btn_manual_attach.clicked.connect(self._manual_attach)
-        top_bar.addWidget(self._btn_manual_attach)
+        cb_layout.addWidget(self._btn_manual_attach)
 
-        root.addLayout(top_bar)
+        root.addWidget(self._conn_bar)
 
         # ── Splitter: preview left | tabs right ──────────────────────
         splitter = QSplitter(Qt.Horizontal)
@@ -476,7 +979,7 @@ class ToolsWindow(QMainWindow):
         pg_layout.addWidget(self._preview)
 
         self._coord_lbl = QLabel("X: –  Y: –")
-        self._coord_lbl.setStyleSheet("color:#585b70; font:10px 'Consolas';")
+        self._coord_lbl.setStyleSheet("color:#6a6a6a; font:10px 'Consolas';")
         self._coord_lbl.setAlignment(Qt.AlignRight)
         self._preview.coord_changed.connect(lambda x, y: self._coord_lbl.setText(f"X:{x}  Y:{y}"))
         pg_layout.addWidget(self._coord_lbl)
@@ -491,7 +994,8 @@ class ToolsWindow(QMainWindow):
         left_layout.addWidget(self._btn_restore)
 
         left.setMinimumWidth(260)
-        left.setMaximumWidth(380)
+        # allow preview pane to grow freely when window is resized
+        # left.setMaximumWidth(380)
         splitter.addWidget(left)
 
         # Right: tabs
@@ -501,16 +1005,19 @@ class ToolsWindow(QMainWindow):
 
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
-        self._tabs.setStyleSheet("""
-            QTabBar::tab { padding:8px 18px; font-size:11px; }
-            QTabBar::tab:selected { font-weight:bold; }
-        """)
 
         # Feature tabs
         self._tab_guild = GuildRealmRaidTab()
         self._add_feature_tab(self._tab_guild, "⚔ Kết giới Guild")
         self._tab_personal = PersonalRealmRaidTab()
-        self._add_feature_tab(self._tab_personal, "⚔ Kết giới Cá nhân")        
+        self._add_feature_tab(self._tab_personal, "⚔ Kết giới Cá nhân")
+        self._tab_autoclick = AutoClickTab()
+        # connect preview double-click to autoclick picker
+        try:
+            self._preview.coord_selected.connect(self._tab_autoclick.on_preview_selected)
+        except Exception:
+            pass
+        self._add_feature_tab(self._tab_autoclick, "🖱 Auto Click")
         self._tabs.addTab(ComingSoonTab("Tính năng khác"), "➕ Khác")
 
         right_layout.addWidget(self._tabs, 1)
@@ -581,9 +1088,12 @@ class ToolsWindow(QMainWindow):
             self._capture_worker.start()
         else:
             self._capture_worker.set_capture(cap)
-        self._dot.setStyleSheet("color:#a6e3a1;")
-        self._window_lbl.setText(f"🟢  {name}")
-        self._window_lbl.setStyleSheet("color:#a6e3a1; font-weight:bold;")
+        self._conn_bar.setStyleSheet(
+            "QFrame#conn_bar { background:#0d2a1a; border-bottom:2px solid #1db954; }"
+        )
+        self._dot.setStyleSheet("color:#1db954;")
+        self._window_lbl.setText(f"  {name}")
+        self._window_lbl.setStyleSheet("color:#1db954; font-weight:600;")
         self._btn_restore.setEnabled(True)
         self._log.append_ok(f"Đã kết nối: {name}")
 
@@ -593,10 +1103,13 @@ class ToolsWindow(QMainWindow):
         for tab in self._feature_tabs:
             tab.set_capture(None)
         self._preview.clear()
-        self._preview.setStyleSheet("background:#1e1e2e; border:1px solid #444; border-radius:4px;")
-        self._dot.setStyleSheet("color:#f38ba8;")
+        self._preview.setStyleSheet("background:#1a1a1a; border:1px solid #333333; border-radius:6px;")
+        self._conn_bar.setStyleSheet(
+            "QFrame#conn_bar { background:#2d1017; border-bottom:2px solid #e22134; }"
+        )
+        self._dot.setStyleSheet("color:#e22134;")
         self._window_lbl.setText("Chưa tìm thấy cửa sổ game")
-        self._window_lbl.setStyleSheet("color:#a6adc8;")
+        self._window_lbl.setStyleSheet("color:#6a6a6a;")
         self._btn_restore.setEnabled(False)
         if not silent:
             self._log.append_info("Đã ngắt kết nối.")
@@ -652,28 +1165,29 @@ class ToolsWindow(QMainWindow):
 # Dark palette + entry point
 # ---------------------------------------------------------------------------
 
-def apply_dark_palette(app: QApplication):
+def apply_light_palette(app: QApplication):
     app.setStyle("Fusion")
     p = QPalette()
-    p.setColor(QPalette.Window,          QColor(30, 30, 46))
-    p.setColor(QPalette.WindowText,      QColor(205, 214, 244))
-    p.setColor(QPalette.Base,            QColor(24, 24, 37))
-    p.setColor(QPalette.AlternateBase,   QColor(30, 30, 46))
-    p.setColor(QPalette.ToolTipBase,     QColor(30, 30, 46))
-    p.setColor(QPalette.ToolTipText,     QColor(205, 214, 244))
-    p.setColor(QPalette.Text,            QColor(205, 214, 244))
-    p.setColor(QPalette.Button,          QColor(49, 50, 68))
-    p.setColor(QPalette.ButtonText,      QColor(205, 214, 244))
-    p.setColor(QPalette.BrightText,      QColor(243, 139, 168))
-    p.setColor(QPalette.Link,            QColor(137, 180, 250))
-    p.setColor(QPalette.Highlight,       QColor(137, 180, 250))
-    p.setColor(QPalette.HighlightedText, QColor(30, 30, 46))
+    p.setColor(QPalette.Window,          QColor(18, 18, 18))
+    p.setColor(QPalette.WindowText,      QColor(255, 255, 255))
+    p.setColor(QPalette.Base,            QColor(40, 40, 40))
+    p.setColor(QPalette.AlternateBase,   QColor(24, 24, 24))
+    p.setColor(QPalette.ToolTipBase,     QColor(40, 40, 40))
+    p.setColor(QPalette.ToolTipText,     QColor(255, 255, 255))
+    p.setColor(QPalette.Text,            QColor(255, 255, 255))
+    p.setColor(QPalette.Button,          QColor(40, 40, 40))
+    p.setColor(QPalette.ButtonText,      QColor(255, 255, 255))
+    p.setColor(QPalette.BrightText,      QColor(226, 33, 52))
+    p.setColor(QPalette.Link,            QColor(29, 185, 84))
+    p.setColor(QPalette.Highlight,       QColor(29, 185, 84))
+    p.setColor(QPalette.HighlightedText, QColor(0, 0, 0))
     app.setPalette(p)
+    app.setStyleSheet(APP_STYLE)
 
 
 def main():
     app = QApplication(sys.argv)
-    apply_dark_palette(app)
+    apply_light_palette(app)
     win = ToolsWindow()
     win.show()
     sys.exit(app.exec_())
