@@ -22,7 +22,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QTabWidget, QTextEdit, QGroupBox,
     QSplitter, QFileDialog, QCheckBox, QFrame, QSizePolicy,
-    QSpacerItem, QProgressBar, QSpinBox, QDoubleSpinBox, QComboBox, QListWidget, QLineEdit, QListWidgetItem
+    QSpacerItem, QProgressBar, QSpinBox, QDoubleSpinBox, QComboBox, QListWidget, QLineEdit, QListWidgetItem, QInputDialog, QButtonGroup
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QMutex, QMutexLocker, QRect, QSize
 from PyQt5.QtGui import QImage, QPixmap, QFont, QColor, QTextCursor, QPainter, QPalette
@@ -614,6 +614,25 @@ class AutoClickTab(QWidget):
         coord_row.addWidget(self._btn_pick_game)
         root.addLayout(coord_row)
 
+        # mouse button selector for each new point (toggle buttons for visibility)
+        btn_row = QHBoxLayout()
+        btn_row.addWidget(QLabel("Button:"))
+        self._btn_left = QPushButton("Left")
+        self._btn_left.setCheckable(True)
+        self._btn_right = QPushButton("Right")
+        self._btn_right.setCheckable(True)
+        # group so only one can be down
+        self._btn_grp = QButtonGroup(self)
+        self._btn_grp.addButton(self._btn_left)
+        self._btn_grp.addButton(self._btn_right)
+        self._btn_left.setChecked(True)
+        for b in (self._btn_left, self._btn_right):
+            b.setFixedWidth(60)
+            b.setStyleSheet("QPushButton:checked { background:#1db954; color:#000; }")
+        btn_row.addWidget(self._btn_left)
+        btn_row.addWidget(self._btn_right)
+        root.addLayout(btn_row)
+
         hint = QLabel("(Hoặc double-click vào preview để lấy tọa độ)")
         hint.setStyleSheet("color:#6a6a6a; font-size:11px;")
         root.addWidget(hint)
@@ -641,6 +660,8 @@ class AutoClickTab(QWidget):
         seq_row = QHBoxLayout()
         self._list_points = QListWidget()
         self._list_points.setFixedHeight(140)
+        self._list_points.setDragDropMode(QListWidget.InternalMove)
+        self._list_points.itemDoubleClicked.connect(self._edit_point)
         seq_row.addWidget(self._list_points, 1)
 
         seq_btns = QVBoxLayout()
@@ -659,10 +680,7 @@ class AutoClickTab(QWidget):
 
         # Options row
         opts = QHBoxLayout()
-        opts.addWidget(QLabel("Button:"))
-        self._cmb_button = QComboBox()
-        self._cmb_button.addItems(["Left", "Right"])
-        opts.addWidget(self._cmb_button)
+        # (button selection is handled above per step)
 
         opts.addSpacing(8)
         opts.addWidget(QLabel("Interval(s):"))
@@ -752,7 +770,7 @@ class AutoClickTab(QWidget):
             return
         x = int(self._spin_x.value())
         y = int(self._spin_y.value())
-        btn = self._cmb_button.currentText()
+        btn = self._btn_grp.checkedButton().text()
         interval = float(self._spin_interval.value())
         repeat = int(self._spin_repeat.value())
 
@@ -768,12 +786,12 @@ class AutoClickTab(QWidget):
             # build sequence from list; if empty use single point
             seq = self._get_sequence_points()
             if not seq:
-                seq = [(x, y)]
+                seq = [(btn, x, y, None, 0)]
             while not self._stop_evt.is_set():
                 if repeat > 0 and cnt >= repeat:
                     break
                 # iterate through sequence
-                for px, py, pimg, pth in seq:
+                for btn_step, px, py, pimg, pth in seq:
                     if self._stop_evt.is_set():
                         break
                     # check per-point condition if any
@@ -783,7 +801,7 @@ class AutoClickTab(QWidget):
                             self.log_signal.emit(f"Skip ({px},{py}) — condition not met: {pimg}")
                             continue
                     lparam = win32api.MAKELONG(px, py)
-                    if btn.lower().startswith("left"):
+                    if btn_step.lower().startswith("left"):
                         win32gui.PostMessage(self._capture.hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lparam)
                         time.sleep(0.02)
                         win32gui.PostMessage(self._capture.hwnd, win32con.WM_LBUTTONUP, 0, lparam)
@@ -791,7 +809,7 @@ class AutoClickTab(QWidget):
                         win32gui.PostMessage(self._capture.hwnd, win32con.WM_RBUTTONDOWN, win32con.MK_RBUTTON, lparam)
                         time.sleep(0.02)
                         win32gui.PostMessage(self._capture.hwnd, win32con.WM_RBUTTONUP, 0, lparam)
-                    self.log_signal.emit(f"Clicked ({px},{py}) [{btn}]")
+                    self.log_signal.emit(f"Clicked ({px},{py}) [{btn_step}]")
                     # sleep interval but check stop event
                     slept = 0.0
                     while slept < interval:
@@ -822,17 +840,19 @@ class AutoClickTab(QWidget):
     def _add_point(self):
         x = int(self._spin_x.value())
         y = int(self._spin_y.value())
+        btn = self._btn_grp.checkedButton().text()
         cond_img = self._cond_img.text().strip()
         if cond_img == "":
             cond_img = None
         thresh = float(self._cond_thresh.value())
-        text = f"{x},{y}"
+        text = f"[{btn[0]}] {x},{y}"
         if cond_img:
             text += f"  | if {cond_img} >= {thresh}"
         item = QListWidgetItem(text)
-        item.setData(Qt.UserRole, (x, y, cond_img, thresh))
+        item.setData(Qt.UserRole, (btn, x, y, cond_img, thresh))
         self._list_points.addItem(item)
-        self.log_signal.emit(f"Added point: ({x},{y})")
+        self.log_signal.emit(f"Added point: ({x},{y}) btn={btn}")
+
 
     def _remove_point(self):
         cur = self._list_points.currentRow()
@@ -843,6 +863,25 @@ class AutoClickTab(QWidget):
     def _clear_points(self):
         self._list_points.clear()
         self.log_signal.emit("Cleared points list")
+
+    def _edit_point(self, item: QListWidgetItem):
+        # allow user to change which mouse button for this step
+        data = item.data(Qt.UserRole)
+        if not data or not isinstance(data, tuple):
+            return
+        btn, px, py, img, thresh = data
+        choice, ok = QInputDialog.getItem(
+            self, "Chọn chuột", "Button:", ["Left", "Right"],
+            0 if btn.lower().startswith("l") else 1, False
+        )
+        if ok and choice:
+            data = (choice, px, py, img, thresh)
+            item.setData(Qt.UserRole, data)
+            txt = f"[{choice[0]}] {px},{py}"
+            if img:
+                txt += f"  | if {img} >= {thresh}"
+            item.setText(txt)
+            self.log_signal.emit(f"Edited point ({px},{py}) btn={choice}")
 
     def _browse_image(self):
         path, _ = QFileDialog.getOpenFileName(self, "Chọn ảnh template", str(DSL_DIR / 'images'), "PNG Files (*.png);;All Files (*)")
@@ -862,22 +901,54 @@ class AutoClickTab(QWidget):
         for i in range(self._list_points.count()):
             item = self._list_points.item(i)
             data = item.data(Qt.UserRole)
-            if data and isinstance(data, tuple) and len(data) == 4:
-                px, py, img, thresh = data
-                pts.append((int(px), int(py), img, float(thresh)))
+            if data and isinstance(data, tuple) and len(data) == 5:
+                btn, px, py, img, thresh = data
+                pts.append((btn, int(px), int(py), img, float(thresh)))
             else:
                 txt = item.text()
                 try:
-                    px, py = txt.split(",")
-                    pts.append((int(px), int(py), None, 0.8))
+                    # fall back if old format
+                    pre, coords = txt.split()
+                    px, py = coords.split(",")
+                    btn = 'Left' if pre.startswith('[L]') else 'Right'
+                    pts.append((btn, int(px), int(py), None, 0.8))
                 except Exception:
                     continue
         return pts
 
 
+
 # ---------------------------------------------------------------------------
 # Tab: Placeholder cho các tính năng tương lai
 # ---------------------------------------------------------------------------
+
+class SoulTab(FeatureTab):
+    """Tab treo rắn. Có selector chủ phòng / được mời, thay đổi script accordingly."""
+    def __init__(self, parent=None):
+        # default to host
+        super().__init__(
+            title="🐍 Treo rắn",
+            description="Chế độ treo rắn, chọn chủ phòng hoặc được mời để dùng script phù hợp.",
+            default_dsl="dsl/builtin/auto_soul_host.dsl",
+            parent=parent,
+        )
+        # insert combo right after header
+        root = self.layout()
+        self._mode_combo = QComboBox()
+        self._mode_combo.addItems(["Chủ phòng", "Được mời"])
+        self._mode_combo.setMaxVisibleItems(10)
+        self._mode_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self._mode_combo.currentIndexChanged.connect(self._mode_changed)
+        # combo should appear before the description label (index 1)
+        root.insertWidget(1, self._mode_combo)
+
+    def _mode_changed(self, idx: int):
+        if idx == 0:
+            self._dsl_file = Path("dsl/builtin/auto_soul_host.dsl")
+        else:
+            self._dsl_file = Path("dsl/builtin/auto_soul_invited.dsl")
+        self._file_lbl.setText(self._dsl_file.name)
+
 
 class ComingSoonTab(QWidget):
     def __init__(self, feature_name: str, parent=None):
@@ -939,6 +1010,7 @@ class ToolsWindow(QMainWindow):
         cb_layout = QHBoxLayout(self._conn_bar)
         cb_layout.setContentsMargins(12, 0, 12, 0)
         cb_layout.setSpacing(10)
+        cb_layout.setAlignment(Qt.AlignVCenter)
 
         self._dot = QLabel("●")
         self._dot.setFont(QFont("Segoe UI", 16))
@@ -1018,6 +1090,11 @@ class ToolsWindow(QMainWindow):
         except Exception:
             pass
         self._add_feature_tab(self._tab_autoclick, "🖱 Auto Click")
+
+        # treo rắn tab with host/invited selector
+        self._tab_soul = SoulTab()
+        self._add_feature_tab(self._tab_soul, "🐍 Treo rắn")
+
         self._tabs.addTab(ComingSoonTab("Tính năng khác"), "➕ Khác")
 
         right_layout.addWidget(self._tabs, 1)
