@@ -5,3 +5,4 @@ keyboard
 mss
 PyQt5
 psutil
+pyinstaller
