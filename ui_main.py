@@ -19,8 +19,8 @@ from PyQt5.QtWidgets import (
     QPlainTextEdit, QCheckBox, QSpinBox, QFileDialog, QListWidget,
     QListWidgetItem, QFrame, QSizePolicy, QCompleter
 )
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QMutex, QMutexLocker, QRect, QSize
-from PyQt5.QtGui import QImage, QPixmap, QFont, QColor, QTextCursor, QPainter, QTextFormat
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QMutex, QMutexLocker, QRect, QSize, QRegExp
+from PyQt5.QtGui import QImage, QPixmap, QFont, QColor, QTextCursor, QPainter, QTextFormat, QSyntaxHighlighter, QTextCharFormat
 
 from screenshot import WindowCapture
 from dsl_engine import DSLEngine
@@ -56,6 +56,51 @@ def get_image_files() -> list[str]:
         return []
     return [f"'{p.name}'" for p in img_dir.glob("*.png")]
 
+class DSLHighlighter(QSyntaxHighlighter):
+    def __init__(self, document):
+        super().__init__(document)
+        self.highlightingRules = []
+
+        # Màu sắc (VS Code Dark+ style)
+        keyword_format = QTextCharFormat()
+        keyword_format.setForeground(QColor("#C586C0"))  # Pink/Purple
+        keyword_format.setFontWeight(QFont.Bold)
+
+        string_format = QTextCharFormat()
+        string_format.setForeground(QColor("#CE9178"))   # Orange
+
+        number_format = QTextCharFormat()
+        number_format.setForeground(QColor("#B5CEA8"))   # Light Green
+
+        comment_format = QTextCharFormat()
+        comment_format.setForeground(QColor("#6A9955"))  # Dark Green
+        comment_format.setFontItalic(True)
+
+        # 1. Keywords
+        for word in DSL_KEYWORDS:
+            pattern = QRegExp(r"\b" + word + r"\b")
+            self.highlightingRules.append((pattern, keyword_format))
+
+        # 2. Numbers
+        self.highlightingRules.append((QRegExp(r"\b[0-9]+(\.[0-9]+)?\b"), number_format))
+
+        # 3. Strings (giữa cặp dấu nháy đơn hoặc kép)
+        self.highlightingRules.append((QRegExp(r'"[^"\\]*(\\.[^"\\]*)*"'), string_format))
+        self.highlightingRules.append((QRegExp(r"'[^'\\]*(\\.[^'\\]*)*'"), string_format))
+
+        # 4. Comments (bắt đầu bằng #)
+        self.highlightingRules.append((QRegExp(r"#[^\n]*"), comment_format))
+
+    def highlightBlock(self, text):
+        for pattern, format in self.highlightingRules:
+            expression = QRegExp(pattern)
+            index = expression.indexIn(text)
+            while index >= 0:
+                length = expression.matchedLength()
+                self.setFormat(index, length, format)
+                index = expression.indexIn(text, index + length)
+
+
 class LineNumberEditor(QPlainTextEdit):
     """QPlainTextEdit với line numbers bên trái và tính năng auto-complete."""
 
@@ -64,7 +109,11 @@ class LineNumberEditor(QPlainTextEdit):
         self._line_area = LineNumberArea(self)
         self.blockCountChanged.connect(self._update_line_area_width)
         self.updateRequest.connect(self._update_line_area)
+        self.cursorPositionChanged.connect(self._highlight_current_line)
         self._update_line_area_width()
+
+        # Áp dụng Syntax Highlighter
+        self.highlighter = DSLHighlighter(self.document())
 
         # Nạp cả keywords DSL và tên file ảnh vào completer
         keywords = DSL_KEYWORDS + get_image_files()
@@ -75,7 +124,60 @@ class LineNumberEditor(QPlainTextEdit):
         self.completer.setWidget(self)
         self.completer.setCompletionMode(QCompleter.PopupCompletion)
         self.completer.setCaseSensitivity(Qt.CaseInsensitive)
-        self.completer.activated.connect(self.insert_completion)
+        self.completer.activated[str].connect(self.insert_completion)
+
+        # Cài đặt Linter
+        self.linter = DSLLinter(self)
+        self.linter.lint_finished.connect(self._on_lint_finished)
+        self.textChanged.connect(self._trigger_lint)
+        
+        self.lint_timer = QTimer(self)
+        self.lint_timer.setSingleShot(True)
+        self.lint_timer.setInterval(500)
+        self.lint_timer.timeout.connect(self._do_lint)
+        self.error_selections = []
+        
+        # eventFilter để bắt phím khi popup gợi ý đang mở
+        self.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if obj == self and event.type() == event.KeyPress:
+            if self.completer and self.completer.popup() and self.completer.popup().isVisible():
+                if event.key() in (Qt.Key_Enter, Qt.Key_Return, Qt.Key_Tab):
+                    index = self.completer.popup().currentIndex()
+                    if index.isValid():
+                        text = self.completer.completionModel().data(index)
+                        self.completer.popup().hide()
+                        self.insert_completion(text)
+                    return True
+                elif event.key() in (Qt.Key_Escape, Qt.Key_Backtab):
+                    self.completer.popup().hide()
+                    return True
+        return super().eventFilter(obj, event)
+
+    def _trigger_lint(self):
+        self.lint_timer.start()
+
+    def _do_lint(self):
+        self.linter.check_text(self.toPlainText())
+
+    def _on_lint_finished(self, errors):
+        self.error_selections.clear()
+        
+        for line_idx, msg in errors:
+            selection = QTextEdit.ExtraSelection()
+            format = QTextCharFormat()
+            format.setUnderlineStyle(QTextCharFormat.SpellCheckUnderline)
+            format.setUnderlineColor(QColor("red"))
+            format.setToolTip(msg)
+            selection.format = format
+            
+            cursor = QTextCursor(self.document().findBlockByNumber(line_idx))
+            cursor.select(QTextCursor.BlockUnderCursor)
+            selection.cursor = cursor
+            self.error_selections.append(selection)
+            
+        self._highlight_current_line() # Merge error lines and current line
 
     def refresh_completer_model(self):
         """Cập nhật lại danh sách file ảnh mởi do user có thể vừa thêm."""
@@ -113,11 +215,6 @@ class LineNumberEditor(QPlainTextEdit):
         super().focusInEvent(e)
 
     def keyPressEvent(self, e):
-        if self.completer and self.completer.popup() and self.completer.popup().isVisible():
-            if e.key() in (Qt.Key_Enter, Qt.Key_Return, Qt.Key_Escape, Qt.Key_Tab, Qt.Key_Backtab):
-                e.ignore()
-                return
-
         is_shortcut = (e.modifiers() & Qt.ControlModifier) and e.key() == Qt.Key_Space
         if not self.completer or not is_shortcut:
             super().keyPressEvent(e)
@@ -143,6 +240,19 @@ class LineNumberEditor(QPlainTextEdit):
         cr.setWidth(self.completer.popup().sizeHintForColumn(0)
                     + self.completer.popup().verticalScrollBar().sizeHint().width())
         self.completer.complete(cr)
+
+
+    def _highlight_current_line(self):
+        extraSelections = list(self.error_selections)
+        if not self.isReadOnly():
+            selection = QTextEdit.ExtraSelection()
+            lineColor = QColor(255, 255, 255, 12)  # Highlight nhạt kiểu VSCode
+            selection.format.setBackground(lineColor)
+            selection.format.setProperty(QTextFormat.FullWidthSelection, True)
+            selection.cursor = self.textCursor()
+            selection.cursor.clearSelection()
+            extraSelections.append(selection)
+        self.setExtraSelections(extraSelections)
 
     def line_number_area_width(self) -> int:
         digits = max(1, len(str(self.blockCount())))
@@ -184,6 +294,54 @@ class LineNumberEditor(QPlainTextEdit):
             bottom = top + round(self.blockBoundingRect(block).height())
             block_num += 1
         painter.end()
+
+
+class DSLLinter(QThread):
+    lint_finished = pyqtSignal(list)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.text = ""
+        self.mutex = QMutex()
+        self._need_check = False
+
+    def check_text(self, text: str):
+        with QMutexLocker(self.mutex):
+            self.text = text
+            self._need_check = True
+        self.start()
+
+    def run(self):
+        with QMutexLocker(self.mutex):
+            if not self._need_check:
+                return
+            text = self.text
+            self._need_check = False
+            
+        errors = []
+        lines = text.split('\n')
+        
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or stripped.endswith(":"):
+                continue
+
+            # Split without losing quote context
+            try:
+                from dsl_engine import _tokenize
+                tokens = _tokenize(stripped)
+            except Exception:
+                errors.append((i, "Lỗi cú pháp: Không thể tách từ (dấu nháy không đóng)."))
+                continue
+                
+            if not tokens:
+                continue
+            
+            cmd = tokens[0].lower()
+            if cmd not in DSL_KEYWORDS:
+                errors.append((i, f"Lệnh không hợp lệ: '{cmd}'"))
+                
+        self.lint_finished.emit(errors)
 
 
 # ---------------------------------------------------------------------------
