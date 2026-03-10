@@ -7,6 +7,8 @@ Cú pháp:
     dclick X Y
     move X Y
     drag X1 Y1 X2 Y2
+    drag_to 'img1.png' 'img2.png' [THRESHOLD]  # drag từ vị trí ảnh 1 đến ảnh 2
+    drag_offset 'img.png' DX DY             # tìm ảnh, kéo từ tâm ảnh đến tâm ảnh cộng offset (DX, DY)
     key KEYNAME
     type "text"
     wait SECONDS
@@ -138,6 +140,22 @@ class DSLEngine:
         lparam = win32api.MAKELONG(x2, y2)
         win32gui.PostMessage(cap.hwnd, win32con.WM_LBUTTONUP, 0, lparam)
 
+    def _window_scroll(self, delta: int):
+        """Scroll vertical wheel by the given delta ticks (positive = up)."""
+        with self._lock:
+            cap = self._capture
+        if cap is None:
+            return
+        # Use current cursor position inside window for lparam
+        try:
+            x, y = win32gui.GetCursorPos()
+            x, y = win32gui.ScreenToClient(cap.hwnd, (x, y))
+        except Exception:
+            x, y = (0, 0)
+        lparam = win32api.MAKELONG(x, y)
+        wparam = delta * win32con.WHEEL_DELTA
+        win32gui.PostMessage(cap.hwnd, win32con.WM_MOUSEWHEEL, wparam, lparam)
+
     def _window_key(self, key_name: str):
         with self._lock:
             cap = self._capture
@@ -181,7 +199,9 @@ class DSLEngine:
         win32gui.MoveWindow(hwnd, cur_rect[0], cur_rect[1], win_w, win_h, True)
 
     def _find_template(self, image_name: str, threshold: float = 0.8) -> Optional[tuple[int, int]]:
-        """Multi-scale template matching. Trả về (cx, cy) tọa độ thật của cửa sổ."""
+        """Multi-scale template matching. Trả về (cx, cy) tọa độ thật của cửa sổ.
+        Đây là hàm đã tồn tại, dùng cho các lệnh cần tâm ảnh (click, drag to, ...).
+        """
         frame = self._get_frame()
         if frame is None:
             return None
@@ -395,6 +415,42 @@ class DSLEngine:
             elif cmd == "drag":
                 self._window_drag(int(tokens[1]), int(tokens[2]),
                                   int(tokens[3]), int(tokens[4]))
+            elif cmd in ("drag_to", "drag_image"):
+                # drag from image1 to image2; optional threshold applies to both
+                img1 = self._parse_string_arg(tokens[1])
+                img2 = self._parse_string_arg(tokens[2])
+                thresh = float(tokens[3]) if len(tokens) > 3 else 0.8
+                pos1 = self._find_template(img1, thresh)
+                pos2 = self._find_template(img2, thresh) if pos1 else None
+                if pos1 and pos2:
+                    self._window_drag(pos1[0], pos1[1], pos2[0], pos2[1])
+                    if log_fn:
+                        log_fn(f"drag {img1}@{pos1} -> {img2}@{pos2}")
+                else:
+                    if log_fn:
+                        log_fn(f"drag_to failed: {img1} or {img2} not found")
+            elif cmd == "drag_offset":
+                # drag_offset 'image' DX DY
+                img = self._parse_string_arg(tokens[1])
+                dx = int(tokens[2])
+                dy = int(tokens[3])
+                pos = self._find_template(img)
+                if pos is not None:
+                    start_x, start_y = pos
+                    end_x = start_x + dx
+                    end_y = start_y + dy
+                    self._window_drag(start_x, start_y, end_x, end_y)
+                    if log_fn:
+                        log_fn(f"drag_offset {img} center+({dx},{dy})")
+                else:
+                    if log_fn:
+                        log_fn(f"drag_offset failed: image not found")
+            elif cmd == "scroll":
+                # scroll N
+                amount = int(tokens[1])
+                self._window_scroll(amount)
+                if log_fn:
+                    log_fn(f"scroll {amount}")
             elif cmd == "key":
                 self._window_key(tokens[1])
             elif cmd == "type":
@@ -563,8 +619,24 @@ class DSLEngine:
         return end_idx + 1
 
     def _eval_condition(self, tokens: list[str]) -> bool:
+        # support simple logical operators AND/OR between sub-conditions and unary NOT
         if not tokens:
             return False
+        # handle unary not at beginning
+        if tokens[0].lower() == "not":
+            return not self._eval_condition(tokens[1:])
+        # look for top-level and/or (left-to-right, no precedence grouping)
+        if "and" in tokens:
+            idx = tokens.index("and")
+            return self._eval_condition(tokens[:idx]) and self._eval_condition(tokens[idx+1:])
+        if "or" in tokens:
+            idx = tokens.index("or")
+            return self._eval_condition(tokens[:idx]) or self._eval_condition(tokens[idx+1:])
+
+        # single token may be a boolean variable name
+        if len(tokens) == 1:
+            return bool(self._variables.get(tokens[0], 0))
+
         cmd = tokens[0].lower()
         if cmd == "exists":
             img = self._parse_string_arg(tokens[1])
@@ -578,7 +650,15 @@ class DSLEngine:
         if len(tokens) >= 3:
             var_val = self._variables.get(tokens[0], 0)
             op = tokens[1]
-            rhs = float(tokens[2])
+            rhs_tok = tokens[2]
+            # interpret boolean rhs
+            if rhs_tok.lower() in ("true", "false"):
+                rhs = 1.0 if rhs_tok.lower() == "true" else 0.0
+            else:
+                try:
+                    rhs = float(rhs_tok)
+                except ValueError:
+                    rhs = self._variables.get(rhs_tok, 0)
             if op == ">":
                 return var_val > rhs
             elif op == "<":
@@ -675,6 +755,7 @@ class DSLEngine:
             return float(token)
         except ValueError:
             return self._variables.get(token, 0)
+
 
 
 # ---------------------------------------------------------------------------

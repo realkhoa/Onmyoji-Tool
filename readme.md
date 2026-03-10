@@ -51,6 +51,9 @@ Script viết trong file `.dsl` hoặc `.txt`. Dòng bắt đầu bằng `#` là
 | `dclick X Y` | Double click |
 | `move X Y` | Di chuyển chuột |
 | `drag X1 Y1 X2 Y2` | Kéo thả |
+| `drag_to 'img1.png' 'img2.png' [THRESHOLD]` | Kéo từ vị trí ảnh 1 tới ảnh 2 |
+| `drag_offset 'img.png' DX DY` | Tìm ảnh, kéo từ tâm ảnh đến điểm (tâm + DX, DY) |
+| `scroll N` | Cuộn bánh xe chuột theo số ticks (120 = 1 notch) |
 | `key KEYNAME` | Nhấn phím (`enter`, `space`, `f1`…) |
 | `type "text"` | Gõ chuỗi ký tự |
 
@@ -72,7 +75,24 @@ Script viết trong file `.dsl` hoặc `.txt`. Dòng bắt đầu bằng `#` là
 | `wait_for 'img.png'` | Chờ vô hạn cho đến khi thấy ảnh |
 | `wait_for 'img.png' 30` | Chờ tối đa 30 giây |
 | `wait_and_click 'img.png'` | Chờ rồi click |
-| `exists 'img.png' 0.85` | Kiểm tra ảnh có trên màn hình (dùng trong `if`) |
+| `exists 'img.png' 0.85` | Kiểm tra ảnh có trên màn hình (dùng trong `if`)
+
+> Các điều kiện có thể nối với `and`/`or` (và tiền tố `not`) để tạo biểu thức đơn giản. Biến số có thể dùng làm điều kiện (0=false, khác 0=true) và so sánh boolean (`true`/`false`).
+> ```dsl
+> set ok 0
+> if ok
+>   log "ok là true"
+> end
+>
+> if counter >= 5 and not done
+>   log "chưa xong"
+> end
+>
+> if exists 'a.png' or ready == true
+>   # ...
+> end
+> ```
+> Phép toán đánh giá trái sang phải, không hỗ trợ ngoặc.
 | `exists_exact 'img.png'` | Kiểm tra theo màu (không grayscale, chính xác hơn) |
 | `count VAR 'img.png'` | Đếm số lần ảnh xuất hiện, lưu vào biến `VAR` |
 
