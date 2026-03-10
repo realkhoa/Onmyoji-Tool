@@ -4,6 +4,7 @@ import re
 import time
 import threading
 from collections import OrderedDict
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -16,7 +17,7 @@ from PyQt5.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QComboBox, QTabWidget,
     QTextEdit, QGroupBox, QSplitter, QStatusBar, QMessageBox,
     QPlainTextEdit, QCheckBox, QSpinBox, QFileDialog, QListWidget,
-    QListWidgetItem, QFrame, QSizePolicy
+    QListWidgetItem, QFrame, QSizePolicy, QCompleter
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QMutex, QMutexLocker, QRect, QSize
 from PyQt5.QtGui import QImage, QPixmap, QFont, QColor, QTextCursor, QPainter, QTextFormat
@@ -40,8 +41,23 @@ class LineNumberArea(QWidget):
         self._editor.line_number_area_paint(event)
 
 
+DSL_KEYWORDS = [
+    "click", "rclick", "dclick", "move", "drag", "drag_to", "drag_image", "drag_offset",
+    "key", "type", "wait", "wait_random", "scroll", "log", "find_and_click",
+    "wait_for", "wait_and_click", "exists", "exists_exact", "find_and_click_largest_shiki",
+    "loop", "end", "forever", "if", "elif", "else", "not", "and", "or",
+    "set", "resize", "do", "until", "goto", "count"
+]
+
+def get_image_files() -> list[str]:
+    """Lấy danh sách các file .png trong thư mục images."""
+    img_dir = Path("images")
+    if not img_dir.exists():
+        return []
+    return [f"'{p.name}'" for p in img_dir.glob("*.png")]
+
 class LineNumberEditor(QPlainTextEdit):
-    """QPlainTextEdit với line numbers bên trái."""
+    """QPlainTextEdit với line numbers bên trái và tính năng auto-complete."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -49,6 +65,84 @@ class LineNumberEditor(QPlainTextEdit):
         self.blockCountChanged.connect(self._update_line_area_width)
         self.updateRequest.connect(self._update_line_area)
         self._update_line_area_width()
+
+        # Nạp cả keywords DSL và tên file ảnh vào completer
+        keywords = DSL_KEYWORDS + get_image_files()
+        
+        from PyQt5.QtCore import QStringListModel
+        self.completer = QCompleter(keywords, self)
+        self.completer.setModel(QStringListModel(keywords, self.completer))
+        self.completer.setWidget(self)
+        self.completer.setCompletionMode(QCompleter.PopupCompletion)
+        self.completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self.completer.activated.connect(self.insert_completion)
+
+    def refresh_completer_model(self):
+        """Cập nhật lại danh sách file ảnh mởi do user có thể vừa thêm."""
+        from PyQt5.QtCore import QStringListModel
+        keywords = DSL_KEYWORDS + get_image_files()
+        self.completer.setModel(QStringListModel(keywords, self.completer))
+
+    def insert_completion(self, completion):
+        tc = self.textCursor()
+        prefix = self.completer.completionPrefix()
+        
+        # Nếu đang gõ name string, xóa prefix hiện tại và điền nốt
+        extra = (len(completion) - len(prefix))
+        
+        tc.movePosition(QTextCursor.Left, QTextCursor.KeepAnchor, len(prefix))
+        tc.insertText(completion)
+        self.setTextCursor(tc)
+
+    def text_under_cursor(self) -> str:
+        tc = self.textCursor()
+        # Tìm lại từ (gồm cả dấu ' nếu đang gõ chuỗi)
+        block_text = tc.block().text()
+        pos = tc.positionInBlock()
+        
+        start = pos
+        while start > 0 and (block_text[start - 1].isalnum() or block_text[start - 1] in "_'"):
+            start -= 1
+        
+        return block_text[start:pos]
+
+    def focusInEvent(self, e):
+        if self.completer:
+            self.completer.setWidget(self)
+            self.refresh_completer_model()
+        super().focusInEvent(e)
+
+    def keyPressEvent(self, e):
+        if self.completer and self.completer.popup() and self.completer.popup().isVisible():
+            if e.key() in (Qt.Key_Enter, Qt.Key_Return, Qt.Key_Escape, Qt.Key_Tab, Qt.Key_Backtab):
+                e.ignore()
+                return
+
+        is_shortcut = (e.modifiers() & Qt.ControlModifier) and e.key() == Qt.Key_Space
+        if not self.completer or not is_shortcut:
+            super().keyPressEvent(e)
+
+        ctrl_or_shift = e.modifiers() & (Qt.ControlModifier | Qt.ShiftModifier)
+        if not self.completer or (ctrl_or_shift and e.text() == ""):
+            return
+
+        has_modifier = e.modifiers() != Qt.NoModifier and not ctrl_or_shift
+        completion_prefix = self.text_under_cursor()
+
+        if not is_shortcut and (has_modifier or e.text() == "" or len(completion_prefix) < 1):
+            self.completer.popup().hide()
+            return
+
+        if completion_prefix != self.completer.completionPrefix():
+            self.completer.setCompletionPrefix(completion_prefix)
+            self.completer.popup().setCurrentIndex(
+                self.completer.completionModel().index(0, 0)
+            )
+
+        cr = self.cursorRect()
+        cr.setWidth(self.completer.popup().sizeHintForColumn(0)
+                    + self.completer.popup().verticalScrollBar().sizeHint().width())
+        self.completer.complete(cr)
 
     def line_number_area_width(self) -> int:
         digits = max(1, len(str(self.blockCount())))
@@ -640,7 +734,7 @@ class MainWindow(QMainWindow):
         fps_row = QHBoxLayout()
         fps_row.addWidget(QLabel("FPS:"))
         self.spin_fps = QSpinBox()
-        self.spin_fps.setRange(1, 60)
+        self.spin_fps.setRange(1, 144)
         self.spin_fps.setValue(15)
         self.spin_fps.valueChanged.connect(lambda v: self._capture_worker.set_fps(v))
         fps_row.addWidget(self.spin_fps)

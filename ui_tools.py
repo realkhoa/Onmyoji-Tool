@@ -9,6 +9,13 @@ import time
 import threading
 from pathlib import Path
 
+# Tối ưu hoá phần cứng cho QtWebEngine (sửa lỗi ui web bị lag, giật)
+# Xoá bỏ --single-process (dễ gây nghẽn) và bật các cờ ép buộc xài GPU cho hiệu năng tốt hơn.
+os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
+    "--disable-logging --log-level=3 "
+    "--ignore-gpu-blocklist --enable-gpu-rasterization --enable-zero-copy"
+)
+
 import cv2
 import numpy as np
 import win32gui
@@ -24,8 +31,9 @@ from PyQt5.QtWidgets import (
     QSplitter, QFileDialog, QCheckBox, QFrame, QSizePolicy,
     QSpacerItem, QProgressBar, QSpinBox, QDoubleSpinBox, QComboBox, QListWidget, QLineEdit, QListWidgetItem, QInputDialog, QButtonGroup
 )
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QMutex, QMutexLocker, QRect, QSize
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QMutex, QMutexLocker, QRect, QSize, QUrl
 from PyQt5.QtGui import QImage, QPixmap, QFont, QColor, QTextCursor, QPainter, QPalette
+from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from screenshot import WindowCapture
 from dsl_engine import DSLEngine
@@ -49,7 +57,7 @@ _TEXT_MUT = "#6a6a6a"
 _DANGER   = "#e22134"
 
 APP_STYLE = """
-* { font-family: 'Segoe UI'; font-size: 10pt; color: #ffffff; }
+* { font-family: 'Consolas', monospace; font-size: 10pt; color: #ffffff; }
 
 QMainWindow, QDialog { background: #121212; }
 QWidget { background: transparent; }
@@ -126,7 +134,6 @@ QTabBar::tab {
     border-bottom: 2px solid transparent;
     padding: 10px 22px;
     color: #b3b3b3;
-    font: 10pt 'Segoe UI';
 }
 QTabBar::tab:hover:!selected { color: #ffffff; border-bottom: 2px solid #535353; }
 QTabBar::tab:selected {
@@ -411,13 +418,13 @@ class FeatureTab(QWidget):
 
         # ── Header ──────────────────────────────────────────────────
         header = QLabel(self.title)
-        header.setFont(QFont("Segoe UI", 15, QFont.Bold))
+        header.setFont(QFont("Consolas", 15, QFont.Bold))
         header.setStyleSheet("color:#1db954; letter-spacing:0.5px;")
         root.addWidget(header)
 
         desc_lbl = QLabel(description)
         desc_lbl.setWordWrap(True)
-        desc_lbl.setStyleSheet("color:#b3b3b3; font-size:11px;")
+        desc_lbl.setStyleSheet("color:#b3b3b3; font-size:12px;")
         root.addWidget(desc_lbl)
 
         sep = QFrame()
@@ -446,14 +453,14 @@ class FeatureTab(QWidget):
 
         self._btn_start = QPushButton("▶  Bắt đầu")
         self._btn_start.setFixedHeight(40)
-        self._btn_start.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        self._btn_start.setFont(QFont("Consolas", 11, QFont.Bold))
         self._btn_start.setObjectName("btn_success")
         self._btn_start.clicked.connect(self._start)
         btn_layout.addWidget(self._btn_start)
 
         self._btn_stop = QPushButton("■  Dừng lại")
         self._btn_stop.setFixedHeight(40)
-        self._btn_stop.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        self._btn_stop.setFont(QFont("Consolas", 11, QFont.Bold))
         self._btn_stop.setObjectName("btn_danger")
         self._btn_stop.clicked.connect(self._stop)
         self._btn_stop.hide()
@@ -569,6 +576,32 @@ class PersonalRealmRaidTab(FeatureTab):
         )
 
 
+class AutoDemonParadeTab(FeatureTab):
+    def __init__(self, parent=None):
+        super().__init__(
+            title="🎯 Ném đậu (Bách Quỷ Dạ Hành)",
+            description=(
+                "Tự động ném đậu trong hoạt động Bách Quỷ Dạ Hành. "
+                "Script mặc định: auto_demon_parade.dsl"
+            ),
+            default_dsl="dsl/builtin/auto_demon_parade.dsl",
+            parent=parent,
+        )
+
+
+class AutoDuelTab(FeatureTab):
+    def __init__(self, parent=None):
+        super().__init__(
+            title="⚔️ PVP",
+            description=(
+                "Tự động tham gia Duel/PVP và nhấn chuẩn bị/auto. "
+                "Script mặc định: auto_duel.dsl"
+            ),
+            default_dsl="dsl/builtin/auto_duel.dsl",
+            parent=parent,
+        )
+
+
 class AutoClickTab(QWidget):
     log_signal = pyqtSignal(str)
     started_signal = pyqtSignal()
@@ -589,7 +622,7 @@ class AutoClickTab(QWidget):
         root.setContentsMargins(12, 12, 12, 12)
 
         header = QLabel("🖱 Auto Click")
-        header.setFont(QFont("Segoe UI", 15, QFont.Bold))
+        header.setFont(QFont("Consolas", 15, QFont.Bold))
         header.setStyleSheet("color:#1db954; letter-spacing:0.5px;")
         root.addWidget(header)
 
@@ -703,7 +736,7 @@ class AutoClickTab(QWidget):
         btn_row = QHBoxLayout()
         self._btn_start = QPushButton("▶  Bắt đầu")
         self._btn_start.setFixedHeight(40)
-        self._btn_start.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        self._btn_start.setFont(QFont("Consolas", 11, QFont.Bold))
         self._btn_start.setObjectName("btn_success")
         self._btn_start.clicked.connect(self._start)
         btn_row.addWidget(self._btn_start)
@@ -950,6 +983,18 @@ class SoulTab(FeatureTab):
         self._file_lbl.setText(self._dsl_file.name)
 
 
+class GuideTab(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Thêm trình duyệt nhúng web guide
+        self.browser = QWebEngineView()
+        self.browser.setUrl(QUrl("https://guidemyoji.com/summon-room-patterns/"))
+        layout.addWidget(self.browser)
+
+
 class ComingSoonTab(QWidget):
     def __init__(self, feature_name: str, parent=None):
         super().__init__(parent)
@@ -1013,13 +1058,13 @@ class ToolsWindow(QMainWindow):
         cb_layout.setAlignment(Qt.AlignVCenter)
 
         self._dot = QLabel("●")
-        self._dot.setFont(QFont("Segoe UI", 16))
+        self._dot.setFont(QFont("Consolas", 16))
         self._dot.setStyleSheet("color:#e22134;")
         self._dot.setFixedWidth(24)
         cb_layout.addWidget(self._dot)
 
         self._window_lbl = QLabel("Chưa tìm thấy cửa sổ game")
-        self._window_lbl.setFont(QFont("Segoe UI", 10))
+        self._window_lbl.setFont(QFont("Consolas", 10))
         self._window_lbl.setStyleSheet("color:#6a6a6a;")
         cb_layout.addWidget(self._window_lbl, 1)
 
@@ -1028,7 +1073,8 @@ class ToolsWindow(QMainWindow):
         self._chk_auto.stateChanged.connect(self._on_auto_toggle)
         cb_layout.addWidget(self._chk_auto)
 
-        self._btn_manual_attach = QPushButton("🔗 Kết nối ngay")
+        self._btn_manual_attach = QPushButton("Kết nối ngay")
+        self._btn_manual_attach.setObjectName("btn_primary")
         self._btn_manual_attach.setFixedHeight(28)
         self._btn_manual_attach.clicked.connect(self._manual_attach)
         cb_layout.addWidget(self._btn_manual_attach)
@@ -1094,6 +1140,18 @@ class ToolsWindow(QMainWindow):
         # treo rắn tab with host/invited selector
         self._tab_soul = SoulTab()
         self._add_feature_tab(self._tab_soul, "🐍 Treo rắn")
+
+        # Ném đậu tab
+        self._tab_demon_parade = AutoDemonParadeTab()
+        self._add_feature_tab(self._tab_demon_parade, "🎯 Bách Quỷ Dạ Hành")
+
+        # Auto PvP tab
+        self._tab_auto_duel = AutoDuelTab()
+        self._add_feature_tab(self._tab_auto_duel, "⚔️ PVP")
+
+        # Tab Guide embed website
+        self._tab_guide = GuideTab()
+        self._tabs.addTab(self._tab_guide, "📚 Guide")
 
         self._tabs.addTab(ComingSoonTab("Tính năng khác"), "➕ Khác")
 

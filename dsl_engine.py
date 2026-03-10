@@ -18,6 +18,7 @@ Cú pháp:
     wait_for 'image.png' TIMEOUT
     wait_and_click 'image.png' TIMEOUT
     exists 'image.png'              (dùng trong if)
+    find_and_click_largest_shiki    (crop, tìm và click vùng nhiều màu đen nhất trong 3 vùng dọc, dùng cho màn chọn shiki)
     loop N / loop forever ... end
     if exists 'img' ... elif ... else ... end
     set VAR VALUE / set VAR + N / set VAR - N
@@ -496,6 +497,50 @@ class DSLEngine:
                 result = self._wait_for_images(images, timeout, log_fn)
                 if result:
                     self._window_click(result[1][0], result[1][1])
+            elif cmd == "find_and_click_largest_shiki":
+                frame = self._get_frame()
+                if frame is not None:
+                    h, w = frame.shape[:2]
+                    # Chỉ lấy khúc giữa màn hình theo chiều dọc (bỏ 1/3 top, bỏ 1/3 bottom)
+                    y_start = h // 3
+                    y_end = (h * 2) // 3
+
+                    roi_img = frame[y_start:y_end, :]
+
+                    lower_black = np.array([0, 0, 0], dtype=np.uint8)
+                    upper_black = np.array([50, 50, 50], dtype=np.uint8)
+                    mask = cv2.inRange(roi_img, lower_black, upper_black)
+
+                    part_w = w // 3
+                    counts = []
+                    for k in range(3):
+                        x1 = k * part_w
+                        x2 = (k + 1) * part_w if k < 2 else w
+                        region_mask = mask[:, x1:x2]
+                        counts.append(cv2.countNonZero(region_mask))
+                    
+                    best_idx = int(np.argmax(counts))
+                    
+                    # Calculate exact center of mass of the black pixels in the winning part
+                    x1 = best_idx * part_w
+                    x2 = (best_idx + 1) * part_w if best_idx < 2 else w
+                    best_region = mask[:, x1:x2]
+                    
+                    y_idx, x_idx = np.nonzero(best_region)
+                    if len(x_idx) > 0:
+                        cx = int(np.mean(x_idx)) + x1
+                        cy = int(np.mean(y_idx)) + y_start
+                    else:
+                        cx = best_idx * part_w + part_w // 2
+                        cy = y_start + (y_end - y_start) // 2
+
+                    if log_fn:
+                        log_fn(f"find_and_click_largest_shiki: counts={counts}, best_idx={best_idx+1}, clicking at ({cx}, {cy})")
+                    
+                    self._window_click(cx, cy)
+                else:
+                    if log_fn:
+                        log_fn("find_and_click_largest_shiki: frame is None")
             elif cmd == "resize":
                 rw = int(tokens[1]) if len(tokens) > 1 else 1920
                 rh = int(tokens[2]) if len(tokens) > 2 else 1080
