@@ -1,6 +1,10 @@
 """
 DSL Engine – bộ thông dịch script đơn giản cho game bot.
 
+Ngôn ngữ được thiết kế để dễ đọc và giống cấu trúc tự nhiên, nhưng hiện đã hỗ trợ biểu thức
+Python đầy đủ trong các tham số số và điều kiện. Bạn có thể dùng toán học, so sánh, hàm
+`exists('img.png')`, `rand()`/`randint()`, `min`/`max`/... ngay trong biểu thức.
+
 Cú pháp:
     click X Y
     rclick X Y
@@ -499,22 +503,30 @@ class DSLEngine:
             cmd = tokens[0].lower()
 
             if cmd == "click":
-                x, y = int(tokens[1]), int(tokens[2])
+                x = int(self._resolve_value(tokens[1]))
+                y = int(self._resolve_value(tokens[2]))
                 self._window_click(x, y)
                 if log_fn:
                     log_fn(f"click {x} {y}")
             elif cmd == "rclick":
-                x, y = int(tokens[1]), int(tokens[2])
+                x = int(self._resolve_value(tokens[1]))
+                y = int(self._resolve_value(tokens[2]))
                 self._window_click(x, y, button="right")
             elif cmd == "dclick":
-                x, y = int(tokens[1]), int(tokens[2])
+                x = int(self._resolve_value(tokens[1]))
+                y = int(self._resolve_value(tokens[2]))
                 self._window_click(x, y, double=True)
             elif cmd == "move":
-                x, y = int(tokens[1]), int(tokens[2])
+                x = int(self._resolve_value(tokens[1]))
+                y = int(self._resolve_value(tokens[2]))
                 self._window_move(x, y)
             elif cmd == "drag":
-                self._window_drag(int(tokens[1]), int(tokens[2]),
-                                  int(tokens[3]), int(tokens[4]))
+                self._window_drag(
+                    int(self._resolve_value(tokens[1])),
+                    int(self._resolve_value(tokens[2])),
+                    int(self._resolve_value(tokens[3])),
+                    int(self._resolve_value(tokens[4])),
+                )
             elif cmd in ("drag_to", "drag_image"):
                 # drag from image1 to image2; optional threshold applies to both
                 img1 = self._parse_string_arg(tokens[1])
@@ -532,8 +544,8 @@ class DSLEngine:
             elif cmd == "drag_offset":
                 # drag_offset 'image' DX DY
                 img = self._parse_string_arg(tokens[1])
-                dx = int(tokens[2])
-                dy = int(tokens[3])
+                dx = int(self._resolve_value(tokens[2]))
+                dy = int(self._resolve_value(tokens[3]))
                 pos = self._find_template(img)
                 if pos is not None:
                     start_x, start_y = pos
@@ -547,7 +559,7 @@ class DSLEngine:
                         log_fn(f"drag_offset failed: image not found")
             elif cmd == "scroll":
                 # scroll N
-                amount = int(tokens[1])
+                amount = int(self._resolve_value(tokens[1]))
                 self._window_scroll(amount)
                 if log_fn:
                     log_fn(f"scroll {amount}")
@@ -559,7 +571,7 @@ class DSLEngine:
             elif cmd == "count":
                 var = tokens[1]
                 img = self._parse_string_arg(tokens[2])
-                thresh = float(tokens[3]) if len(tokens) > 3 else 0.8
+                thresh = float(self._resolve_value(tokens[3])) if len(tokens) > 3 else 0.8
                 n = self._count_template(img, thresh)
                 self._variables[var] = float(n)
                 if log_fn:
@@ -568,15 +580,23 @@ class DSLEngine:
                 secs = self._resolve_value(tokens[1])
                 self._interruptible_sleep(secs)
             elif cmd == "wait_random":
-                lo = float(tokens[1])
-                hi = float(tokens[2])
+                lo = float(self._resolve_value(tokens[1]))
+                hi = float(self._resolve_value(tokens[2]))
                 self._interruptible_sleep(random.uniform(lo, hi))
             elif cmd == "log":
-                msg = self._parse_string_arg(tokens[1]) if len(tokens) > 1 else ""
+                if len(tokens) > 1:
+                    arg = tokens[1]
+                    if (arg.startswith("'") and arg.endswith("'")) or (arg.startswith('"') and arg.endswith('"')):
+                        msg = self._parse_string_arg(arg)
+                    else:
+                        # treat as expression
+                        msg = str(self._eval_expr(" ".join(tokens[1:])))
+                else:
+                    msg = ""
                 if log_fn:
                     log_fn(msg)
             elif cmd == "find_and_click_largest_shiki":
-                thresh_val = int(tokens[1]) if len(tokens) > 1 else 50
+                thresh_val = int(self._resolve_value(tokens[1])) if len(tokens) > 1 else 50
                 pos = self._find_largest_shiki(dark_thresh=thresh_val)
                 if pos:
                     self._window_click(pos[0], pos[1])
@@ -586,8 +606,8 @@ class DSLEngine:
                     if log_fn:
                         log_fn("no shiki silhouette found")
             elif cmd == "throw_at_largest_shiki":
-                delay = int(tokens[1]) if len(tokens) > 1 else 100
-                mt = int(tokens[2]) if len(tokens) > 2 else 30
+                delay = int(self._resolve_value(tokens[1])) if len(tokens) > 1 else 100
+                mt = int(self._resolve_value(tokens[2])) if len(tokens) > 2 else 30
                 pos = self._find_largest_moving(delay_ms=delay, motion_thresh=mt)
                 if pos:
                     self._window_click(pos[0], pos[1])
@@ -618,8 +638,8 @@ class DSLEngine:
                 if result:
                     self._window_click(result[1][0], result[1][1])
             elif cmd == "resize":
-                rw = int(tokens[1]) if len(tokens) > 1 else 1920
-                rh = int(tokens[2]) if len(tokens) > 2 else 1080
+                rw = int(self._resolve_value(tokens[1])) if len(tokens) > 1 else 1920
+                rh = int(self._resolve_value(tokens[2])) if len(tokens) > 2 else 1080
                 self.resize_window(rw, rh)
                 if log_fn:
                     log_fn(f"resize window to {rw}x{rh}")
@@ -680,11 +700,14 @@ class DSLEngine:
 
     def _handle_set(self, tokens: list[str]):
         var = tokens[1]
-        if len(tokens) == 3:
-            self._variables[var] = float(tokens[2])
-        elif len(tokens) == 4:
+        # if only variable name given, reset to 0
+        if len(tokens) == 2:
+            self._variables[var] = 0.0
+            return
+        # old syntax: set VAR + N  or set VAR - N  (increment/decrement)
+        if len(tokens) == 4 and tokens[2] in ("+", "-", "*", "/", "%", "**"):
             op = tokens[2]
-            val = float(tokens[3])
+            val = self._resolve_value(tokens[3])
             cur = self._variables.get(var, 0)
             if op == "+":
                 self._variables[var] = cur + val
@@ -694,6 +717,19 @@ class DSLEngine:
                 self._variables[var] = cur * val
             elif op == "/":
                 self._variables[var] = cur / val if val != 0 else cur
+            elif op == "%":
+                self._variables[var] = cur % val if val != 0 else cur
+            elif op == "**":
+                self._variables[var] = cur ** val
+            return
+        # general case: evaluate the expression on the right-hand side
+        expr = " ".join(tokens[2:])
+        val = self._eval_expr(expr)
+        try:
+            self._variables[var] = float(val)
+        except Exception:
+            # if it's not convertible to float, store raw value
+            self._variables[var] = val
 
     def _handle_if(self, lines: list[str], start: int, block_end: int,
                    log_fn) -> int:
@@ -740,19 +776,26 @@ class DSLEngine:
         return end_idx + 1
 
     def _eval_condition(self, tokens: list[str]) -> bool:
-        # support simple logical operators AND/OR between sub-conditions and unary NOT
+        # try to evaluate the entire condition as a Python expression first
+        if tokens:
+            expr = " ".join(tokens)
+            try:
+                return bool(self._eval_expr(expr))
+            except Exception:
+                pass
+        # fallback to legacy parsing logic for backwards compatibility
         if not tokens:
             return False
         # handle unary not at beginning
         if tokens[0].lower() == "not":
             return not self._eval_condition(tokens[1:])
         # look for top-level and/or (left-to-right, no precedence grouping)
-        if "and" in tokens:
-            idx = tokens.index("and")
-            return self._eval_condition(tokens[:idx]) and self._eval_condition(tokens[idx+1:])
         if "or" in tokens:
             idx = tokens.index("or")
             return self._eval_condition(tokens[:idx]) or self._eval_condition(tokens[idx+1:])
+        if "and" in tokens:
+            idx = tokens.index("and")
+            return self._eval_condition(tokens[:idx]) and self._eval_condition(tokens[idx+1:])
 
         # single token may be a boolean variable name
         if len(tokens) == 1:
@@ -794,8 +837,7 @@ class DSLEngine:
                 return var_val != rhs
         return False
 
-    @staticmethod
-    def _parse_find_args(tokens: list[str]) -> tuple[list[str], float]:
+    def _parse_find_args(self, tokens: list[str]) -> tuple[list[str], float]:
         """Parse danh sách ảnh và threshold từ tokens. Trả về (images, threshold)."""
         images = []
         threshold = 0.8
@@ -803,15 +845,16 @@ class DSLEngine:
             if (t.startswith("'") and t.endswith("'")) or \
                (t.startswith('"') and t.endswith('"')):
                 images.append(t[1:-1])
+            elif t.endswith(".png") or t.endswith(".jpg"):
+                images.append(t)
             else:
                 try:
-                    threshold = float(t)
-                except ValueError:
-                    images.append(t)
+                    threshold = float(self._resolve_value(t))
+                except Exception:
+                    pass
         return images, threshold
 
-    @staticmethod
-    def _parse_wait_args(tokens: list[str]) -> tuple[list[str], float]:
+    def _parse_wait_args(self, tokens: list[str]) -> tuple[list[str], float]:
         """Parse danh sách ảnh và timeout từ tokens. Trả về (images, timeout)."""
         images = []
         timeout = 0.0
@@ -820,13 +863,14 @@ class DSLEngine:
             if (t.startswith("'") and t.endswith("'")) or \
                (t.startswith('"') and t.endswith('"')):
                 images.append(t[1:-1])
+            elif t.endswith(".png") or t.endswith(".jpg"):
+                images.append(t)
             else:
-                # Thử parse số -> timeout
+                # Thử parse số (hoặc biểu thức) -> timeout
                 try:
-                    timeout = float(t)
-                except ValueError:
-                    # Không phải số, coi như tên ảnh không quote
-                    images.append(t)
+                    timeout = float(self._resolve_value(t))
+                except Exception:
+                    pass
         return images, timeout
 
     def _wait_for_images(self, image_names: list[str], timeout: float,
@@ -870,12 +914,63 @@ class DSLEngine:
                 return
             time.sleep(min(0.1, end_time - time.time()))
 
+    def _eval_expr(self, expr: str):
+        """Evaluate a Python-style expression using DSL variables and helpers.
+
+        - Variables from self._variables are available by name.
+        - The helper functions `exists` and `exists_exact` are exposed
+          so that scripts can write ``exists('foo.png')`` directly inside
+          expressions/conditions.
+        - A restricted evaluation environment is used (no builtins).
+        """
+        # prepare local namespace with variables and helper funcs
+        local_ns = {k: v for k, v in self._variables.items()}
+        # helper to allow string arguments for exists
+        def exists(img, thresh: float = 0.8):
+            return self._find_template(img, thresh) is not None
+        def exists_exact(img, thresh: float = 0.8):
+            return self._find_template_exact(img, thresh) is not None
+        # expose some useful functions from random/math
+        import math
+        local_ns.update({
+            "exists": exists,
+            "exists_exact": exists_exact,
+            "rand": random.random,
+            "randint": random.randint,
+            "min": min,
+            "max": max,
+            "abs": abs,
+            "math": math,
+        })
+        try:
+            # no builtins to keep it relatively safe
+            return eval(expr, {"__builtins__": {}}, local_ns)
+        except Exception:
+            # evaluation failed; fall back to 0
+            return 0
+
     def _resolve_value(self, token: str) -> float:
-        """Resolve token = number hoặc variable name."""
+        """Resolve token to a float value.
+
+        The token may be:
+        * a literal number
+        * a variable name previously set
+        * any Python expression using variables and helpers
+        """
+        # strip quotes if somehow passed accidentally
+        if (token.startswith("'") and token.endswith("'")) or (
+            token.startswith('"') and token.endswith('"')
+        ):
+            token = token[1:-1]
         try:
             return float(token)
         except ValueError:
-            return self._variables.get(token, 0)
+            # try more complex expression evaluation
+            val = self._eval_expr(token)
+            try:
+                return float(val)
+            except Exception:
+                return self._variables.get(token, 0)
 
 
 
@@ -893,7 +988,10 @@ def _tokenize(line: str) -> list[str]:
             continue
         if line[i] in ("'", '"'):
             quote = line[i]
-            j = line.index(quote, i + 1) + 1
+            try:
+                j = line.index(quote, i + 1) + 1
+            except ValueError:
+                j = len(line)
             tokens.append(line[i:j])
             i = j
         else:

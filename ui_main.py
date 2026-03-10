@@ -23,7 +23,7 @@ from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QMutex, QMutexLocker, 
 from PyQt5.QtGui import QImage, QPixmap, QFont, QColor, QTextCursor, QPainter, QTextFormat, QSyntaxHighlighter, QTextCharFormat
 
 from screenshot import WindowCapture
-from dsl_engine import DSLEngine
+from pps_engine import DSLEngine
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +47,8 @@ DSL_KEYWORDS = [
     "wait_for", "wait_and_click", "exists", "exists_exact", "find_and_click_largest_shiki",
     "throw_at_largest_shiki",
     "loop", "end", "forever", "if", "elif", "else", "not", "and", "or",
-    "set", "resize", "do", "until", "goto", "count"
+    "set", "resize", "do", "until", "goto", "count",
+    "function", "def", "return", "break", "continue"
 ]
 
 def get_image_files() -> list[str]:
@@ -322,14 +323,28 @@ class DSLLinter(QThread):
         errors = []
         lines = text.split('\n')
         
+        # Pass 1: Collect user defined functions
+        user_funcs = set()
+        from pps_engine import _tokenize
+        
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            try:
+                tokens = _tokenize(stripped)
+                if tokens and tokens[0].lower() in ("function", "def") and len(tokens) > 1:
+                    user_funcs.add(tokens[1])
+            except Exception:
+                pass
+        
+        # Pass 2: Check lines
         for i, line in enumerate(lines):
             stripped = line.strip()
             if not stripped or stripped.startswith("#") or stripped.endswith(":"):
                 continue
 
-            # Split without losing quote context
             try:
-                from dsl_engine import _tokenize
                 tokens = _tokenize(stripped)
             except Exception:
                 errors.append((i, "Lỗi cú pháp: Không thể tách từ (dấu nháy không đóng)."))
@@ -339,8 +354,24 @@ class DSLLinter(QThread):
                 continue
             
             cmd = tokens[0].lower()
-            if cmd not in DSL_KEYWORDS:
-                errors.append((i, f"Lệnh không hợp lệ: '{cmd}'"))
+            
+            if cmd == "}":
+                if len(tokens) > 1 and tokens[1].lower() not in ("else", "elif", "until"):
+                    errors.append((i, f"Lệnh không hợp lệ sau '}}': '{tokens[1]}'"))
+                continue
+            
+            if cmd in DSL_KEYWORDS or cmd in user_funcs:
+                continue
+                
+            # Check assignment
+            if len(tokens) >= 2 and tokens[1] in ("=", "+=", "-=", "*=", "/=", "%=", "**="):
+                continue
+            if "=" in line:
+                m = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)\s*(\+|-|\*|/|%|\*\*)?=\s*(.*)$', stripped)
+                if m:
+                    continue
+                    
+            errors.append((i, f"Lệnh hoặc biến không hợp lệ: '{cmd}'"))
                 
         self.lint_finished.emit(errors)
 
@@ -765,45 +796,45 @@ DSL_REFERENCE_HTML = """
 
 <h3>Template matching</h3>
 <table border="1" cellpadding="4" cellspacing="0">
-<tr><td><code>find_and_click 'image.png'</code></td><td>Tìm ảnh trên màn hình, click vào giữa nếu tìm thấy</td></tr>
-<tr><td><code>find_and_click 'image.png' THRESHOLD</code></td><td>Tìm với ngưỡng tùy chỉnh (0.0-1.0, mặc định 0.8)</td></tr>
-<tr><td><code>wait_for 'image.png' TIMEOUT</code></td><td>Chờ cho đến khi tìm thấy ảnh (timeout = giây)</td></tr>
-<tr><td><code>wait_and_click 'image.png' TIMEOUT</code></td><td>Chờ tìm ảnh rồi click</td></tr>
-<tr><td><code>exists 'image.png'</code></td><td>Kiểm tra ảnh có tồn tại trên màn hình (dùng trong if)</td></tr>
+<tr><td><code>find_and_click('image.png')</code></td><td>Tìm ảnh trên màn hình, click vào giữa nếu tìm thấy</td></tr>
+<tr><td><code>find_and_click('image.png', 0.8)</code></td><td>Tìm với ngưỡng tùy chỉnh (0.0-1.0, mặc định 0.8)</td></tr>
+<tr><td><code>wait_for('image.png', TIMEOUT)</code></td><td>Chờ cho đến khi tìm thấy ảnh (timeout = giây)</td></tr>
+<tr><td><code>wait_and_click('image.png', TIMEOUT)</code></td><td>Chờ tìm ảnh rồi click</td></tr>
+<tr><td><code>exists('image.png')</code></td><td>Kiểm tra ảnh có tồn tại trên màn hình (dùng trong if)</td></tr>
 </table>
 
 <h3>Điều khiển luồng</h3>
 <pre>
-loop N           # Lặp N lần (N = số nguyên, hoặc 'forever')
+loop 10 {           # Lặp 10 lần (hoặc 'forever')
   ...
-end
+}
 
-if exists 'img.png'
+if exists('img.png') {
   ...
-elif exists 'img2.png'
+} elif exists('img2.png') {
   ...
-else
+} else {
   ...
-end
+}
 
 # Biến
 set counter 0
-set counter + 1      # tăng 1
-set counter - 1      # giảm 1
+counter = counter + 1      # tăng 1
+counter -= 1               # giảm 1
 </pre>
 
 <h3>Ví dụ hoàn chỉnh</h3>
 <pre>
 # Auto farm loop
 log "Bắt đầu farm"
-loop 50
-  wait_and_click 'battle_btn.png' 10
-  wait 2
-  wait_for 'victory.png' 120
-  wait 1
+loop 50 {
+  wait_and_click('battle_btn.png', 10)
+  wait(2)
+  wait_for('victory.png', 120)
+  wait(1)
   click 500 400
   wait_random 1 3
-end
+}
 log "Xong!"
 </pre>
 """

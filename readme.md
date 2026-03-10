@@ -51,8 +51,8 @@ Script viết trong file `.dsl` hoặc `.txt`. Dòng bắt đầu bằng `#` là
 | `dclick X Y` | Double click |
 | `move X Y` | Di chuyển chuột |
 | `drag X1 Y1 X2 Y2` | Kéo thả |
-| `drag_to 'img1.png' 'img2.png' [THRESHOLD]` | Kéo từ vị trí ảnh 1 tới ảnh 2 |
-| `drag_offset 'img.png' DX DY` | Tìm ảnh, kéo từ tâm ảnh đến điểm (tâm + DX, DY) |
+| `drag_to('img1.png', 'img2.png', [THRESHOLD])` | Kéo từ vị trí ảnh 1 tới ảnh 2 |
+| `drag_offset('img.png', DX, DY)` | Tìm ảnh, kéo từ tâm ảnh đến điểm (tâm + DX, DY) |
 | `scroll N` | Cuộn bánh xe chuột theo số ticks (120 = 1 notch) |
 | `key KEYNAME` | Nhấn phím (`enter`, `space`, `f1`…) |
 | `type "text"` | Gõ chuỗi ký tự |
@@ -61,8 +61,8 @@ Script viết trong file `.dsl` hoặc `.txt`. Dòng bắt đầu bằng `#` là
 
 | Lệnh | Mô tả |
 |---|---|
-| `wait 1.5` | Chờ 1.5 giây |
-| `wait_random 1 3` | Chờ ngẫu nhiên từ 1–3 giây |
+| `wait(1.5)` | Chờ 1.5 giây |
+| `wait_random(1, 3)` | Chờ ngẫu nhiên từ 1–3 giây |
 
 ### Nhận dạng ảnh
 
@@ -70,78 +70,86 @@ Script viết trong file `.dsl` hoặc `.txt`. Dòng bắt đầu bằng `#` là
 
 | Lệnh | Mô tả |
 |---|---|
-| `find_and_click 'btn.png'` | Tìm ảnh và click vào giữa |
-| `find_and_click 'a.png' 'b.png' 0.85` | Tìm nhiều ảnh, click cái nào thấy trước |
-| `wait_for 'img.png'` | Chờ vô hạn cho đến khi thấy ảnh |
-| `wait_for 'img.png' 30` | Chờ tối đa 30 giây |
-| `wait_and_click 'img.png'` | Chờ rồi click |
-| `exists 'img.png' 0.85` | Kiểm tra ảnh có trên màn hình (dùng trong `if`)
+| `find_and_click('btn.png')` | Tìm ảnh và click vào giữa |
+| `find_and_click('a.png', 'b.png', 0.85)` | Tìm nhiều ảnh, click cái nào thấy trước |
+| `wait_for('img.png')` | Chờ vô hạn cho đến khi thấy ảnh |
+| `wait_for('img.png', 30)` | Chờ tối đa 30 giây |
+| `wait_and_click('img.png')` | Chờ rồi click |
+| `exists('img.png', 0.85)` | Kiểm tra ảnh có trên màn hình (dùng trong `if`)
 
-> Các điều kiện có thể nối với `and`/`or` (và tiền tố `not`) để tạo biểu thức đơn giản. Biến số có thể dùng làm điều kiện (0=false, khác 0=true) và so sánh boolean (`true`/`false`).
+> Các điều kiện có thể nối với `and`/`or` (và tiền tố `not`) để tạo biểu thức đơn giản. Ngôn ngữ hiện tại sử dụng cú pháp biểu thức giống Python – bạn có thể viết phép toán, so sánh, gọi hàm `exists('img.png')`, `rand()`, `min()`, `max()` v.v. Các biến số cũng có thể dùng trực tiếp trong biểu thức (0=false, khác 0=true).
 > ```dsl
 > set ok 0
-> if ok
+> set counter 0
+> set x counter + 1        # biểu thức Python, phép toán và biến
+>
+> if ok {
 >   log "ok là true"
-> end
+> }
 >
-> if counter >= 5 and not done
+> if counter >= 5 and not done {
 >   log "chưa xong"
-> end
+> }
 >
-> if exists 'a.png' or ready == true
+> if exists('a.png') or ready == True {
 >   # ...
-> end
+> }
 > ```
-> Phép toán đánh giá trái sang phải, không hỗ trợ ngoặc.
-| `exists_exact 'img.png'` | Kiểm tra theo màu (không grayscale, chính xác hơn) |
-| `count VAR 'img.png'` | Đếm số lần ảnh xuất hiện, lưu vào biến `VAR` |
+> Phép toán đánh giá theo quy tắc Python (có ngoặc, toán tử ưu tiên).
+
+| `exists_exact('img.png')` | Kiểm tra theo màu (không grayscale, chính xác hơn) |
+| `count('VAR', 'img.png')` | Đếm số lần ảnh xuất hiện, lưu vào biến `VAR` |
 
 ### Điều khiển luồng
 
 ```dsl
 # Vòng lặp có đếm
-loop 10
+loop 10 {
   click 500 300
-  wait 1
-end
+  wait(1)
+}
 
 # Vòng lặp vô hạn
-loop forever
-  find_and_click 'btn.png'
-  wait 2
-end
+loop forever {
+  find_and_click('btn.png')
+  wait(2)
+}
 
 # Rẽ nhánh
-if exists 'win.png'
+if exists('win.png') {
   log "Thắng rồi!"
-elif exists 'lose.png'
+} elif exists('lose.png') {
   log "Thua rồi..."
-else
-  wait 1
-end
+} else {
+  wait(1)
+}
 
 # Do...until (chạy ít nhất 1 lần)
-do
-  find_and_click 'attack.png'
-  wait 2
-until exists 'victory.png'
+do {
+  find_and_click('attack.png')
+  wait(2)
+} until exists('victory.png')
 
 # Biến & toán tử
-set counter 0
-set counter + 1
-set counter - 1
+Các biến là số thực và có thể sử dụng biểu thức Python khi gán/so sánh.
 
-if counter >= 10
+```dsl
+counter = 0             # gán giá trị
+counter += 1            # tăng 1
+x = (counter * 3) + 2   # biểu thức phức tạp
+```
+
+if counter >= 10 {
   log "Đã farm 10 lần"
-end
+}
 
 # Goto / Label
 start:
   click 500 300
-  wait 1
-  if exists 'done.png'
+  wait(1)
+  if exists('done.png') {
     goto finish
-  end
+  }
   goto start
 
 finish:
@@ -162,7 +170,7 @@ finish:
 1. Chụp màn hình game (dùng preview trong tool để xem tọa độ)
 2. Crop đúng phần muốn nhận dạng
 3. Lưu vào thư mục `images/` với tên `.png`
-4. Dùng tên file trong script: `find_and_click 'ten_anh.png'`
+4. Dùng tên file trong script: `find_and_click('ten_anh.png')`
 
 > Template matching hỗ trợ đa tỷ lệ — chụp ở resolution nào cũng match được.
 
