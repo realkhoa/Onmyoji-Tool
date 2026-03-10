@@ -18,7 +18,6 @@ Cú pháp:
     wait_for 'image.png' TIMEOUT
     wait_and_click 'image.png' TIMEOUT
     exists 'image.png'              (dùng trong if)
-    find_and_click_largest_shiki    (crop, tìm và click vùng nhiều màu đen nhất trong 3 vùng dọc, dùng cho màn chọn shiki)
     loop N / loop forever ... end
     if exists 'img' ... elif ... else ... end
     set VAR VALUE / set VAR + N / set VAR - N
@@ -27,6 +26,8 @@ Cú pháp:
     label_name:                       (nhãn – dòng kết thúc bằng :)
     goto label_name                   (nhảy đến nhãn)
     count VAR 'image.png' [THRESHOLD] (dếm số lần ảnh xuất hiện, lưu vào biến VAR)
+    find_and_click_largest_shiki [DARK_THRESH]  (tìm & click silhouette đen lớn nhất, mặc định thresh=50)
+    throw_at_largest_shiki [DELAY_MS] [MOTION_THRESH]  (click vật thể chuyển động lớn nhất)
 """
 
 import re
@@ -62,6 +63,7 @@ class DSLEngine:
         self._variables: dict[str, float] = {}
         self._images_dir = Path("images")
         self._reference_size: tuple[int, int] = (1920, 1080)  # kích thước chuẩn cho template
+        self._prev_gray_roi: Optional[np.ndarray] = None  # cached for motion detection
 
     # -- External setters ---------------------------------------------------
 
@@ -354,6 +356,102 @@ class DSLEngine:
                 kept.append(pt)
         return len(kept)
 
+    def _find_largest_shiki(self, dark_thresh: int = 50) -> Optional[tuple[int, int]]:
+        """Detect the largest dark silhouette (shikigami) and return its center.
+
+        Optimised for speed:
+        - works on a single grayscale threshold (no template matching)
+        - crops to the middle band of the screen where shikigami appear
+        - uses cv2.connectedComponentsWithStats (faster than findContours
+          for area queries)
+        """
+        frame = self._get_frame()
+        if frame is None:
+            return None
+
+        h, w = frame.shape[:2]
+
+        # ROI: vertical 30%-85%, horizontal full width
+        y1 = int(h * 0.30)
+        y2 = int(h * 0.85)
+        roi = frame[y1:y2, :]
+
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        # dark pixels -> white
+        _, bw = cv2.threshold(gray, dark_thresh, 255, cv2.THRESH_BINARY_INV)
+
+        # connected components with stats (label 0 = background)
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(bw, connectivity=8)
+        if num_labels <= 1:
+            return None
+
+        # find component with largest area (skip label 0 = bg)
+        areas = stats[1:, cv2.CC_STAT_AREA]
+        best_label = int(np.argmax(areas)) + 1  # +1 because we skipped label 0
+        cx = int(centroids[best_label][0])
+        cy = int(centroids[best_label][1]) + y1  # translate back to full-frame coords
+        return (cx, cy)
+
+    def _find_largest_moving(self, delay_ms: int = 33, motion_thresh: int = 25) -> Optional[tuple[int, int]]:
+        """Detect the largest moving object by frame differencing.
+
+        Uses a cached previous grayscale ROI so the first call stores the
+        frame and the second call (typically next loop iteration) can diff
+        instantly without any sleep.  Falls back to a short sleep only when
+        there is no cached frame.
+
+        Processing is done on a 0.5× downscaled image for speed; the
+        returned coordinates are mapped back to full resolution.
+        """
+        frame = self._get_frame()
+        if frame is None:
+            return None
+
+        h, w = frame.shape[:2]
+        y1 = int(h * 0.30)
+        y2 = int(h * 0.85)
+        roi = frame[y1:y2, :]
+
+        # downscale 0.5× for speed
+        small = cv2.resize(roi, (0, 0), fx=0.5, fy=0.5, interpolation=cv2.INTER_NEAREST)
+        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+
+        prev = self._prev_gray_roi
+
+        if prev is None or prev.shape != gray.shape:
+            # no cached frame yet — store and do a quick re-capture
+            self._prev_gray_roi = gray
+            time.sleep(delay_ms / 1000.0)
+            frame2 = self._get_frame()
+            if frame2 is None:
+                return None
+            roi2 = frame2[y1:y2, :]
+            small2 = cv2.resize(roi2, (0, 0), fx=0.5, fy=0.5, interpolation=cv2.INTER_NEAREST)
+            gray2 = cv2.cvtColor(small2, cv2.COLOR_BGR2GRAY)
+            self._prev_gray_roi = gray2
+            diff = cv2.absdiff(gray, gray2)
+        else:
+            # instant diff against cached frame
+            self._prev_gray_roi = gray
+            diff = cv2.absdiff(prev, gray)
+
+        _, bw = cv2.threshold(diff, motion_thresh, 255, cv2.THRESH_BINARY)
+
+        # single dilate pass on small image
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        bw = cv2.dilate(bw, kernel, iterations=1)
+
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(bw, connectivity=8)
+        if num_labels <= 1:
+            return None
+
+        areas = stats[1:, cv2.CC_STAT_AREA]
+        best_label = int(np.argmax(areas)) + 1
+        # scale centroid back to full resolution
+        cx = int(centroids[best_label][0] * 2)
+        cy = int(centroids[best_label][1] * 2) + y1
+        return (cx, cy)
+
     # -- Parser / tokenizer -------------------------------------------------
 
     @staticmethod
@@ -379,6 +477,7 @@ class DSLEngine:
     def execute(self, script: str, log_fn: Optional[Callable[[str], None]] = None):
         """Chạy DSL script (blocking). Gọi từ worker thread."""
         self._variables.clear()
+        self._prev_gray_roi = None  # reset motion detection cache
         lines = self._parse_lines(script)
         # Build label map: label_name -> line index
         self._labels: dict[str, int] = {}
@@ -476,6 +575,27 @@ class DSLEngine:
                 msg = self._parse_string_arg(tokens[1]) if len(tokens) > 1 else ""
                 if log_fn:
                     log_fn(msg)
+            elif cmd == "find_and_click_largest_shiki":
+                thresh_val = int(tokens[1]) if len(tokens) > 1 else 50
+                pos = self._find_largest_shiki(dark_thresh=thresh_val)
+                if pos:
+                    self._window_click(pos[0], pos[1])
+                    if log_fn:
+                        log_fn(f"clicked largest shiki at {pos}")
+                else:
+                    if log_fn:
+                        log_fn("no shiki silhouette found")
+            elif cmd == "throw_at_largest_shiki":
+                delay = int(tokens[1]) if len(tokens) > 1 else 100
+                mt = int(tokens[2]) if len(tokens) > 2 else 30
+                pos = self._find_largest_moving(delay_ms=delay, motion_thresh=mt)
+                if pos:
+                    self._window_click(pos[0], pos[1])
+                    if log_fn:
+                        log_fn(f"threw at moving shiki at {pos}")
+                else:
+                    if log_fn:
+                        log_fn("no moving shiki detected")
             elif cmd == "find_and_click":
                 images, thresh = self._parse_find_args(tokens[1:])
                 for img in images:
@@ -497,50 +617,6 @@ class DSLEngine:
                 result = self._wait_for_images(images, timeout, log_fn)
                 if result:
                     self._window_click(result[1][0], result[1][1])
-            elif cmd == "find_and_click_largest_shiki":
-                frame = self._get_frame()
-                if frame is not None:
-                    h, w = frame.shape[:2]
-                    # Chỉ lấy khúc giữa màn hình theo chiều dọc (bỏ 1/3 top, bỏ 1/3 bottom)
-                    y_start = h // 3
-                    y_end = (h * 2) // 3
-
-                    roi_img = frame[y_start:y_end, :]
-
-                    lower_black = np.array([0, 0, 0], dtype=np.uint8)
-                    upper_black = np.array([50, 50, 50], dtype=np.uint8)
-                    mask = cv2.inRange(roi_img, lower_black, upper_black)
-
-                    part_w = w // 3
-                    counts = []
-                    for k in range(3):
-                        x1 = k * part_w
-                        x2 = (k + 1) * part_w if k < 2 else w
-                        region_mask = mask[:, x1:x2]
-                        counts.append(cv2.countNonZero(region_mask))
-                    
-                    best_idx = int(np.argmax(counts))
-                    
-                    # Calculate exact center of mass of the black pixels in the winning part
-                    x1 = best_idx * part_w
-                    x2 = (best_idx + 1) * part_w if best_idx < 2 else w
-                    best_region = mask[:, x1:x2]
-                    
-                    y_idx, x_idx = np.nonzero(best_region)
-                    if len(x_idx) > 0:
-                        cx = int(np.mean(x_idx)) + x1
-                        cy = int(np.mean(y_idx)) + y_start
-                    else:
-                        cx = best_idx * part_w + part_w // 2
-                        cy = y_start + (y_end - y_start) // 2
-
-                    if log_fn:
-                        log_fn(f"find_and_click_largest_shiki: counts={counts}, best_idx={best_idx+1}, clicking at ({cx}, {cy})")
-                    
-                    self._window_click(cx, cy)
-                else:
-                    if log_fn:
-                        log_fn("find_and_click_largest_shiki: frame is None")
             elif cmd == "resize":
                 rw = int(tokens[1]) if len(tokens) > 1 else 1920
                 rh = int(tokens[2]) if len(tokens) > 2 else 1080

@@ -7,3 +7,4 @@ PyQt5
 psutil
 pyinstaller
 PyQtWebEngine
+imageio

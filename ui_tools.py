@@ -29,10 +29,10 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QTabWidget, QTextEdit, QGroupBox,
     QSplitter, QFileDialog, QCheckBox, QFrame, QSizePolicy,
-    QSpacerItem, QProgressBar, QSpinBox, QDoubleSpinBox, QComboBox, QListWidget, QLineEdit, QListWidgetItem, QInputDialog, QButtonGroup
+    QSpacerItem, QProgressBar, QSpinBox, QDoubleSpinBox, QComboBox, QListWidget, QLineEdit, QListWidgetItem, QInputDialog, QButtonGroup, QTabBar
 )
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QMutex, QMutexLocker, QRect, QSize, QUrl
-from PyQt5.QtGui import QImage, QPixmap, QFont, QColor, QTextCursor, QPainter, QPalette
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QMutex, QMutexLocker, QRect, QSize, QUrl, QPoint
+from PyQt5.QtGui import QImage, QPixmap, QFont, QColor, QTextCursor, QPainter, QPalette, QMouseEvent, QWheelEvent
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from screenshot import WindowCapture
@@ -390,6 +390,40 @@ class LogWidget(QTextEdit):
     def append_ok(self, msg): self.append_log(msg, "#1db954")
     def append_err(self, msg): self.append_log(msg, "#e22134")
     def append_info(self, msg): self.append_log(msg, "#4da6ff")
+
+
+# ---------------------------------------------------------------------------
+#  Draggable Tab Bar
+# ---------------------------------------------------------------------------
+class DraggableTabBar(QTabBar):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._is_dragging = False
+        self._last_mouse_pos = QPoint()
+
+    def mousePressEvent(self, event: QMouseEvent):
+        if event.button() == Qt.LeftButton:
+            self._is_dragging = True
+            self._last_mouse_pos = event.pos()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent):
+        if self._is_dragging and event.buttons() & Qt.LeftButton:
+            delta = event.pos() - self._last_mouse_pos
+            # Simulate a wheel event to scroll tabs
+            scroll_event = QWheelEvent(
+                event.pos(), event.globalPos(),
+                QPoint(0, 0), QPoint(delta.x() * 2, 0), # multiply to make it faster
+                Qt.LeftButton, Qt.NoModifier, Qt.NoScrollPhase, False
+            )
+            QApplication.postEvent(self, scroll_event)
+            self._last_mouse_pos = event.pos()
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent):
+        if event.button() == Qt.LeftButton:
+            self._is_dragging = False
+        super().mouseReleaseEvent(event)
 
 
 # ---------------------------------------------------------------------------
@@ -1122,7 +1156,9 @@ class ToolsWindow(QMainWindow):
         right_layout.setContentsMargins(4, 0, 0, 0)
 
         self._tabs = QTabWidget()
+        self._tabs.setTabBar(DraggableTabBar())
         self._tabs.setDocumentMode(True)
+        self._tabs.setUsesScrollButtons(True)
 
         # Feature tabs
         self._tab_guild = GuildRealmRaidTab()

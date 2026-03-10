@@ -45,6 +45,7 @@ DSL_KEYWORDS = [
     "click", "rclick", "dclick", "move", "drag", "drag_to", "drag_image", "drag_offset",
     "key", "type", "wait", "wait_random", "scroll", "log", "find_and_click",
     "wait_for", "wait_and_click", "exists", "exists_exact", "find_and_click_largest_shiki",
+    "throw_at_largest_shiki",
     "loop", "end", "forever", "if", "elif", "else", "not", "and", "or",
     "set", "resize", "do", "until", "goto", "count"
 ]
