@@ -37,9 +37,101 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from screenshot import WindowCapture
 from pps_engine import DSLEngine
-from ui_main import LineNumberEditor
 
-DSL_DIR = Path(__file__).parent
+
+# ─────────────────────────────────────────────────────────────────---------
+# Line number editor widget (originally in ui_main.py)
+# ─────────────────────────────────────────────────────────────────---------
+
+from PyQt5.QtWidgets import QPlainTextEdit, QWidget
+from PyQt5.QtGui import QPainter, QColor, QTextFormat
+
+
+class LineNumberArea(QWidget):
+    def __init__(self, editor):
+        super().__init__(editor)
+        self._editor = editor
+
+    def sizeHint(self):
+        return QSize(self._editor.lineNumberAreaWidth(), 0)
+
+    def paintEvent(self, event):
+        self._editor.lineNumberAreaPaintEvent(event)
+
+
+class LineNumberEditor(QPlainTextEdit):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.lineNumberArea = LineNumberArea(self)
+        self.blockCountChanged.connect(self.updateLineNumberAreaWidth)
+        self.updateRequest.connect(self.updateLineNumberArea)
+        self.cursorPositionChanged.connect(self.highlightCurrentLine)
+        self.updateLineNumberAreaWidth(0)
+        self.highlightCurrentLine()
+
+    def lineNumberAreaWidth(self):
+        digits = len(str(self.blockCount()))
+        space = 3 + self.fontMetrics().width("9") * digits
+        return space
+
+    def updateLineNumberAreaWidth(self, _):
+        self.setViewportMargins(self.lineNumberAreaWidth(), 0, 0, 0)
+
+    def updateLineNumberArea(self, rect, dy):
+        if dy:
+            self.lineNumberArea.scroll(0, dy)
+        else:
+            self.lineNumberArea.update(
+                0, rect.y(), self.lineNumberArea.width(), rect.height()
+            )
+        if rect.contains(self.viewport().rect()):
+            self.updateLineNumberAreaWidth(0)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        cr = self.contentsRect()
+        self.lineNumberArea.setGeometry(
+            QRect(cr.left(), cr.top(), self.lineNumberAreaWidth(), cr.height())
+        )
+
+    def lineNumberAreaPaintEvent(self, event):
+        painter = QPainter(self.lineNumberArea)
+        painter.fillRect(event.rect(), QColor("#282828"))
+        block = self.firstVisibleBlock()
+        blockNumber = block.blockNumber()
+        top = self.blockBoundingGeometry(block).translated(self.contentOffset()).top()
+        bottom = top + self.blockBoundingRect(block).height()
+        while block.isValid() and top <= event.rect().bottom():
+            if block.isVisible() and bottom >= event.rect().top():
+                number = str(blockNumber + 1)
+                painter.setPen(QColor("#b3b3b3"))
+                painter.drawText(
+                    0,
+                    int(top),
+                    self.lineNumberArea.width() - 2,
+                    self.fontMetrics().height(),
+                    Qt.AlignRight,
+                    number,
+                )
+            block = block.next()
+            top = bottom
+            bottom = top + self.blockBoundingRect(block).height()
+            blockNumber += 1
+
+    def highlightCurrentLine(self):
+        extraSelections = []
+        if not self.isReadOnly():
+            selection = QTextEdit.ExtraSelection()
+            selection.format.setBackground(QColor("#333333"))
+            selection.format.setProperty(QTextFormat.FullWidthSelection, True)
+            selection.cursor = self.textCursor()
+            selection.cursor.clearSelection()
+            extraSelections.append(selection)
+        self.setExtraSelections(extraSelections)
+
+
+BASE_DIR = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
+DSL_DIR = BASE_DIR / "dsl"
 GAME_WINDOW_KEYWORDS = ["陰陽師Onmyoji"]
 
 # ---------------------------------------------------------------------------
@@ -456,7 +548,7 @@ class FeatureTab(QWidget):
     def __init__(self, title: str, description: str, default_dsl: str, parent=None):
         super().__init__(parent)
         self.title = title
-        self._dsl_file = Path(default_dsl)
+        self._dsl_file = BASE_DIR / default_dsl if default_dsl else Path()
         self._engine = DSLEngine()
         self._worker: threading.Thread | None = None
         self._running = False

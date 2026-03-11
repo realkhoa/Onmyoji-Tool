@@ -30,10 +30,10 @@ pip install -r requirements.txt
 
 ```bash
 # Tool chính – thân thiện, 1 nút dùng luôn
-python ui_tools.py
+python ui_tools.py  # minimal UI
 
 # Tool dev – đầy đủ tính năng, có script editor
-python ui_main.py
+python main.py  # trước đây là ui_main.py, đã hợp nhất vào file chính
 ```
 
 ---

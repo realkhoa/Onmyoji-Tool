@@ -1,6 +1,7 @@
 import threading
 import time
 import random
+import sys
 from pathlib import Path
 from typing import Callable, Optional
 import numpy as np
@@ -21,7 +22,10 @@ class DSLEngine(WindowMixin, VisionMixin):
         self._stop_event = threading.Event()
         self._lock = threading.Lock()
         self._variables: dict[str, float] = {}
-        self._images_dir = Path("images")
+        
+        base_dir = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent.parent))
+        self._images_dir = base_dir / "images"
+        
         self._reference_size: tuple[int, int] = (1920, 1080)
         self._prev_gray_roi: Optional[np.ndarray] = None
         self._functions: dict[str, tuple[list[str], int, int]] = {}
