@@ -3,8 +3,9 @@ numpy
 pywin32
 keyboard
 mss
-PyQt5
+PyQt6
 psutil
 pyinstaller
-PyQtWebEngine
+PyQt6-WebEngine
 imageio
+watchdog
