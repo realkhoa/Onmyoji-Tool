@@ -1,189 +1,97 @@
-# 🎮 Onmyoji Bot
+# 🎮 Onmyoji Bot (Âm Dương Sư Bot)
 
-Bot tự động cho game **陰陽師 Onmyoji** — điều khiển qua ngôn ngữ script DSL.
+Bot tự động đa năng dành cho game **陰陽師 Onmyoji** (bản Steam/Global). Tool giúp bạn tự động hóa các hoạt động lặp đi lặp lại một cách nhàn rỗi.
+
+## ✨ Tính năng nổi bật
+
+- 🔍 **Tự động nhận dạng** cửa sổ game — Không cần cài đặt đường dẫn hay cấu hình phức tạp, chỉ cần mở game và mở tool là tự kết nối.
+- 🖼 **Theo dõi trực tiếp** — Có sẵn màn hình thu nhỏ trong tool để xem tool đang nhìn thấy gì, hỗ trợ hiển thị tọa độ X/Y chi tiết.
+- 🧩 **Thông minh & Linh hoạt** — Hoạt động chính xác dù bạn thu phóng hay thu nhỏ (thu nhỏ thì chưa chắc) cửa sổ game. Hỗ trợ đa dạng tính năng: PvP, Phá kết giới, Ném đậu...
+
+---
+## LƯU Ý QUAN TRỌNG TRƯỚC KHI SỬ DỤNG
+- KHÔNG ĐƯỢC THU NHỎ CỬA SỔ (Minimize) GAME KHI TOOL ĐANG CHẠY. THU NHỎ PHÁT LÀ TOOL KO CHẠY ĐƯỢC LUÔN
+- ĐỔI SANG CỬA SỔ KHÁC DÙNG THÌ BÌNH THƯỜNG
+---
+
+## 🛠 Hướng dẫn Cài đặt
+
+Vì đây là mã nguồn mở, bạn cần thực hiện một vài bước nhỏ để tải về và chạy lần đầu tiên. Đừng lo, các bước được thiết kế để ai cũng có thể làm được.
+
+### Bước 1: Tải mã nguồn (Source Code)
+
+1. Tải và cài đặt **Git** tại: [https://git-scm.com/downloads](https://git-scm.com/downloads) (cứ ấn Next liên tục là được).
+2. Mở ứng dụng **Terminal** (hoặc Command Prompt / PowerShell) trên máy tính.
+3. Chạy lệnh sau để tải source code về máy:
+   ```bash
+   git clone https://github.com/realkhoa/Onmyoji-Tool.git
+   cd Onmyoji-Tool
+   ```
+
+### Bước 2: Cài đặt Môi trường chạy
+
+Để tool chạy mượt mà, chúng ta cần cài đặt Python. Bạn có thể chọn 1 trong 2 cách dưới đây (Cách 1 khuyên dùng cho người mới):
+
+#### Cách 1: Dùng Python chuẩn (`venv`) - Khuyên dùng
+
+1. Tải và cài đặt **Python 3.11** (hoặc mới hơn) tại: [https://www.python.org/downloads/](https://www.python.org/downloads/).
+   *(📌 **Lưu ý quan trọng**: Khi cài đặt, nhớ tích vào ô **"Add python.exe to PATH"** ở màn hình đầu tiên).*
+2. Mở Terminal (trong thư mục `Onmyoji-Tool` vừa tải về), chạy lần lượt các lệnh:
+   ```bash
+   # Tạo môi trường ảo (để không ảnh hưởng tới máy)
+   python -m venv venv
+
+   # Kích hoạt môi trường ảo (trên Windows)
+   venv\Scripts\activate
+
+   # Cài đặt các thư viện cần thiết cho tool
+   pip install -r requirements.txt
+   ```
+
+#### Cách 2: Dùng Anaconda / Miniconda (`conda`)
+
+1. Cài đặt Anaconda hoặc Miniconda.
+2. Mở chương trình **Anaconda Prompt**, di chuyển (lệnh `cd`) đến thư mục `Onmyoji-Tool`, chạy lệnh:
+   ```bash
+   # Tạo và kích hoạt môi trường conda
+   conda create -n bot-onmyoji python=3.11
+   conda activate bot-onmyoji
+
+   # Cài đặt thư viện
+   pip install -r requirements.txt
+   ```
 
 ---
 
-## ✨ Tính năng
+## 🚀 Hướng dẫn Sử dụng (Chạy Tool)
 
-- 🔍 **Tự động attach** cửa sổ game — không cần cài đặt, mở lên là dùng
-- 🖼 **Preview màn hình** game trực tiếp trong tool (hover để xem tọa độ X/Y)
-- 📜 **DSL scripting** — viết script automation dễ đọc, dễ chỉnh
-- 🔎 **Template matching đa tỷ lệ** — nhận dạng ảnh dù game chạy ở resolution nào
+Sau khi cài đặt xong thư viện ở Bước 2, mỗi khi muốn dùng bot, bạn làm như sau:
 
----
-
-## 🚀 Cài đặt & Chạy
-
-> Khuyến nghị dùng **conda** hoặc **venv** để tránh xung đột package.
-
-```bash
-# Tạo môi trường
-conda create -n bot-onmyoji python=3.11
-conda activate bot-onmyoji
-
-# Cài dependencies
-pip install -r requirements.txt
-```
-
-### Chạy tool
-
-```bash
-# Tool chính – thân thiện, 1 nút dùng luôn
-python ui_tools.py  # minimal UI
-
-# Tool dev – đầy đủ tính năng, có script editor
-python main.py  # trước đây là ui_main.py, đã hợp nhất vào file chính
-```
+1. **Mở game Onmyoji** trên máy tính (đợi game load xong vào màn hình chính).
+2. Mở Terminal (hoặc Anaconda Prompt nếu dùng Cách 2) trong thư mục `Onmyoji-Tool`.
+3. Kích hoạt môi trường (chỉ cần chạy 1 trong 2 lệnh tùy theo cách cài của bạn):
+   - Đã cài Cách 1 (`venv`): `venv\Scripts\activate`
+   - Đã cài Cách 2 (`conda`): `conda activate bot-onmyoji`
+4. **Khởi động tool** bằng lệnh:
+   ```bash
+   python main.py
+   ```
+5. Trên giao diện tool hiện ra:
+   - Chọn tab chứa chức năng bạn muốn (Ví dụ: ⚔ Phá kết giới guild).
+   - Nhấn **▶ Bắt đầu** và thả tay khỏi chuột/bàn phím để theo dõi bot làm việc.
+   - Nhấn **■ Dừng lại** bất cứ lúc nào bạn muốn lấy lại quyền điều khiển.
 
 ---
 
-## 📜 DSL Script Reference
+## 📚 Dành cho lập trình viên (Advanced / Power Users)
 
-Script viết trong file `.dsl` hoặc `.txt`. Dòng bắt đầu bằng `#` là comment.
+Bot hoạt động dựa trên một ngôn ngữ kịch bản cực kỳ linh hoạt (DSL). Quản trị viên và người dùng nâng cao có thể tự viết các đoạn mã auto của riêng mình.
 
-### Chuột & Bàn phím
-
-| Lệnh | Mô tả |
-|---|---|
-| `click X Y` | Click trái tại tọa độ (X, Y) |
-| `rclick X Y` | Click phải |
-| `dclick X Y` | Double click |
-| `move X Y` | Di chuyển chuột |
-| `drag X1 Y1 X2 Y2` | Kéo thả |
-| `drag_to('img1.png', 'img2.png', [THRESHOLD])` | Kéo từ vị trí ảnh 1 tới ảnh 2 |
-| `drag_offset('img.png', DX, DY)` | Tìm ảnh, kéo từ tâm ảnh đến điểm (tâm + DX, DY) |
-| `scroll N` | Cuộn bánh xe chuột theo số ticks (120 = 1 notch) |
-| `key KEYNAME` | Nhấn phím (`enter`, `space`, `f1`…) |
-| `type "text"` | Gõ chuỗi ký tự |
-
-### Thời gian
-
-| Lệnh | Mô tả |
-|---|---|
-| `wait(1.5)` | Chờ 1.5 giây |
-| `wait_random(1, 3)` | Chờ ngẫu nhiên từ 1–3 giây |
-
-### Nhận dạng ảnh
-
-Đặt ảnh template vào thư mục `images/`, threshold từ 0.0–1.0 (mặc định 0.8).
-
-| Lệnh | Mô tả |
-|---|---|
-| `find_and_click('btn.png')` | Tìm ảnh và click vào giữa |
-| `find_and_click('a.png', 'b.png', 0.85)` | Tìm nhiều ảnh, click cái nào thấy trước |
-| `wait_for('img.png')` | Chờ vô hạn cho đến khi thấy ảnh |
-| `wait_for('img.png', 30)` | Chờ tối đa 30 giây |
-| `wait_and_click('img.png')` | Chờ rồi click |
-| `exists('img.png', 0.85)` | Kiểm tra ảnh có trên màn hình (dùng trong `if`)
-
-> Các điều kiện có thể nối với `and`/`or` (và tiền tố `not`) để tạo biểu thức đơn giản. Ngôn ngữ hiện tại sử dụng cú pháp biểu thức giống Python – bạn có thể viết phép toán, so sánh, gọi hàm `exists('img.png')`, `rand()`, `min()`, `max()` v.v. Các biến số cũng có thể dùng trực tiếp trong biểu thức (0=false, khác 0=true).
-> ```dsl
-> set ok 0
-> set counter 0
-> set x counter + 1        # biểu thức Python, phép toán và biến
->
-> if ok {
->   log "ok là true"
-> }
->
-> if counter >= 5 and not done {
->   log "chưa xong"
-> }
->
-> if exists('a.png') or ready == True {
->   # ...
-> }
-> ```
-> Phép toán đánh giá theo quy tắc Python (có ngoặc, toán tử ưu tiên).
-
-| `exists_exact('img.png')` | Kiểm tra theo màu (không grayscale, chính xác hơn) |
-| `count('VAR', 'img.png')` | Đếm số lần ảnh xuất hiện, lưu vào biến `VAR` |
-
-### Điều khiển luồng
-
-```dsl
-# Vòng lặp có đếm
-loop 10 {
-  click 500 300
-  wait(1)
-}
-
-# Vòng lặp vô hạn
-loop forever {
-  find_and_click('btn.png')
-  wait(2)
-}
-
-# Rẽ nhánh
-if exists('win.png') {
-  log "Thắng rồi!"
-} elif exists('lose.png') {
-  log "Thua rồi..."
-} else {
-  wait(1)
-}
-
-# Do...until (chạy ít nhất 1 lần)
-do {
-  find_and_click('attack.png')
-  wait(2)
-} until exists('victory.png')
-
-# Biến & toán tử
-Các biến là số thực và có thể sử dụng biểu thức Python khi gán/so sánh.
-
-```dsl
-counter = 0             # gán giá trị
-counter += 1            # tăng 1
-x = (counter * 3) + 2   # biểu thức phức tạp
-```
-
-if counter >= 10 {
-  log "Đã farm 10 lần"
-}
-
-# Goto / Label
-start:
-  click 500 300
-  wait(1)
-  if exists('done.png') {
-    goto finish
-  }
-  goto start
-
-finish:
-  log "Xong!"
-```
-
-### Tiện ích
-
-| Lệnh | Mô tả |
-|---|---|
-| `log "message"` | In thông báo ra log |
-| `resize 1920 1080` | Resize cửa sổ game về 1920×1080 |
+- Xem cú pháp và chức năng chuyên sâu tại: [📖 Hướng dẫn viết DSL Script (dsl_references.md)](dsl_references.md)
+- Để hiển thị giao diện nâng cao có tích hợp công cụ soạn thảo, hãy tìm trong cái tool ấy, t tích hợp sẵn r
 
 ---
 
-## 🖼 Thêm ảnh template
-
-1. Chụp màn hình game (dùng preview trong tool để xem tọa độ)
-2. Crop đúng phần muốn nhận dạng
-3. Lưu vào thư mục `images/` với tên `.png`
-4. Dùng tên file trong script: `find_and_click('ten_anh.png')`
-
-> Template matching hỗ trợ đa tỷ lệ — chụp ở resolution nào cũng match được.
-
----
-
-## 📋 Requirements
-
-```
-opencv-python
-numpy
-pywin32
-PyQt5
-psutil
-keyboard
-mss
-```
+## 📋 Yêu cầu hệ thống cơ bản
+*Tự cài qua `requirements.txt`*
+- `opencv-python`, `numpy`, `pywin32`, `PyQt6`, `psutil`, `keyboard`, `mss`, `qt-material`.
