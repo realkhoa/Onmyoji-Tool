@@ -5,6 +5,7 @@ Tự động tìm & attach cửa sổ Onmyoji khi khởi động.
 
 import sys
 import os
+import win32gui
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
@@ -13,13 +14,16 @@ from PyQt6.QtWidgets import (
     QSizePolicy, QComboBox, QTabBar, QScrollArea, QStackedWidget
 )
 from PyQt6.QtCore import Qt, QTimer
-from qt_material import apply_stylesheet
+from qt_material import apply_stylesheet, build_stylesheet
 
 from i18n import t, get_i18n
 from ui.comps.theme_toggle import ThemeToggle
 from ui.comps.preview_label import PreviewLabel
+from ui.comps.log_widget import LogWidget
 from helpers.capture import CaptureWorker
+from helpers.window import find_game_window
 from screenshot import WindowCapture
+
 from ui.tabs.feature_tab import FeatureTab
 from ui.tabs.guild_realm_raid import GuildRealmRaidTab
 from ui.tabs.personal_realm_raid import PersonalRealmRaidTab
