@@ -210,6 +210,8 @@ class ToolsWindow(QMainWindow):
         # connect preview double-click to autoclick picker
         try:
             self._preview.coord_selected.connect(self._tab_autoclick.on_preview_selected)
+            self._tab_autoclick.request_selection_signal.connect(lambda: self._preview.set_selection_mode(True))
+            self._preview.rect_selected.connect(self._tab_autoclick.on_rect_selected)
         except Exception:
             pass
         self._add_feature_tab(self._tab_autoclick, "🖱 Auto Click")

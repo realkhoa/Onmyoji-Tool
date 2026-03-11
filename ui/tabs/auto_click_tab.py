@@ -6,6 +6,7 @@ import win32api
 import win32con
 import win32gui
 import numpy as np
+import cv2
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QPushButton,
@@ -24,10 +25,13 @@ import sys
 BASE_DIR = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent.parent.parent))
 DSL_DIR = BASE_DIR / "dsl"
 
+
 class AutoClickTab(QWidget):
     log_signal = pyqtSignal(str)
     started_signal = pyqtSignal()
     stopped_signal = pyqtSignal()
+    request_selection_signal = pyqtSignal()
+
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -86,11 +90,7 @@ class AutoClickTab(QWidget):
         self._spin_y.setPrefix("Y: ")
         coord_row.addWidget(self._spin_x)
         coord_row.addWidget(self._spin_y)
-        
-        # self._btn_pick_game = QPushButton(t("btn_pick_game"))
-        # self._btn_pick_game.setToolTip(t("tooltip_pick_game"))
-        # self._btn_pick_game.clicked.connect(self._pick_from_game)
-        # coord_row.addWidget(self._btn_pick_game)
+        coord_row.addStretch()
         config_layout.addLayout(coord_row)
 
         # Mouse button row
@@ -113,24 +113,36 @@ class AutoClickTab(QWidget):
         mouse_row.addStretch()
         config_layout.addLayout(mouse_row)
 
-        # Condition row
-        cond_row = QHBoxLayout()
-        cond_row.addWidget(QLabel(t("lbl_cond_img")))
+        # Condition Row 1: Image
+        cond_img_row = QHBoxLayout()
+        lbl_img = QLabel(t("lbl_cond_img"))
+        lbl_img.setFixedWidth(80)
+        cond_img_row.addWidget(lbl_img)
         self._cond_img = QLineEdit()
         self._cond_img.setPlaceholderText(t("placeholder_cond_img"))
-        cond_row.addWidget(self._cond_img)
+        cond_img_row.addWidget(self._cond_img)
         self._btn_browse_img = QPushButton("...")
-        self._btn_browse_img.setFixedWidth(40)
+        self._btn_browse_img.setFixedWidth(36)
         self._btn_browse_img.clicked.connect(self._browse_image)
-        cond_row.addWidget(self._btn_browse_img)
-        cond_row.addWidget(QLabel(t("lbl_thresh")))
+        cond_img_row.addWidget(self._btn_browse_img)
+        self._btn_pick_rect = QPushButton("📍")
+        self._btn_pick_rect.setFixedWidth(36)
+        self._btn_pick_rect.setToolTip("Select rectangle from preview")
+        self._btn_pick_rect.clicked.connect(lambda: self.request_selection_signal.emit())
+        cond_img_row.addWidget(self._btn_pick_rect)
+        config_layout.addLayout(cond_img_row)
+        
+        # Condition Row 2: Threshold
+        cond_th_row = QHBoxLayout()
+        cond_th_row.addWidget(QLabel(t("lbl_thresh")))
         self._cond_thresh = QDoubleSpinBox()
         self._cond_thresh.setRange(0.0, 1.0)
         self._cond_thresh.setValue(0.8)
         self._cond_thresh.setSingleStep(0.05)
-        self._cond_thresh.setFixedWidth(70)
-        cond_row.addWidget(self._cond_thresh)
-        config_layout.addLayout(cond_row)
+        self._cond_thresh.setFixedWidth(80)
+        cond_th_row.addWidget(self._cond_thresh)
+        cond_th_row.addStretch()
+        config_layout.addLayout(cond_th_row)
         
         self._btn_add = QPushButton(t("btn_add_point"))
         self._btn_add.setObjectName("btn_primary")
@@ -168,13 +180,16 @@ class AutoClickTab(QWidget):
         self._spin_interval = QDoubleSpinBox()
         self._spin_interval.setRange(0.01, 3600.0)
         self._spin_interval.setValue(1.0)
+        self._spin_interval.setFixedWidth(80)
         opt_layout.addWidget(self._spin_interval)
         
         opt_layout.addSpacing(20)
         opt_layout.addWidget(QLabel(t("lbl_repeat")))
         self._spin_repeat = QSpinBox()
         self._spin_repeat.setRange(0, 1000000)
+        self._spin_repeat.setFixedWidth(100)
         opt_layout.addWidget(self._spin_repeat)
+        opt_layout.addStretch()
         layout.addWidget(opt_box)
 
         # 5. Control (Final check on success/danger names)
@@ -215,6 +230,32 @@ class AutoClickTab(QWidget):
         self._spin_x.setValue(x)
         self._spin_y.setValue(y)
         self.log_signal.emit(f"Picked from preview: ({x},{y})")
+
+    def on_rect_selected(self, x: int, y: int, w: int, h: int):
+        frame = self._engine._get_frame()
+        if frame is None:
+            self.log_signal.emit(t("warning_no_game_attached"))
+            return
+        
+        # Crop safely
+        fh, fw = frame.shape[:2]
+        x1, y1 = max(0, x), max(0, y)
+        x2, y2 = min(fw, x + w), min(fh, y + h)
+        
+        if x2 <= x1 or y2 <= y1:
+            return
+            
+        crop = frame[y1:y2, x1:x2]
+        
+        temp_dir = DSL_DIR / "images" / "temp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        filename = f"cond_{int(time.time() * 1000)}.png"
+        filepath = temp_dir / filename
+        
+        cv2.imwrite(str(filepath), crop)
+        self._cond_img.setText(f"temp/{filename}")
+        self.log_signal.emit(f"Saved condition image from preview: {filename}")
 
     def _pick_from_game(self):
         if self._capture is None:
