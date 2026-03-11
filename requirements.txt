@@ -9,3 +9,4 @@ pyinstaller
 PyQt6-WebEngine
 imageio
 watchdog
+qt-material

@@ -1,0 +1,193 @@
+/* 
+   ================================================================
+   DARK MODE: MATERIAL DESIGN (Material 3)
+   ================================================================
+*/
+
+* {
+    font-family: 'Roboto', 'Segoe UI', sans-serif;
+    font-size: 14px;
+    outline: none;
+}
+
+QWidget {
+    background-color: #121212; /* Material Dark Background */
+    color: rgba(255, 255, 255, 0.87); /* High-emphasis text */
+    selection-background-color: #bb86fc; /* Material Purple 200 */
+    selection-color: #000000;
+}
+
+/* Surfaces & Elevations */
+#header_panel {
+    background-color: #1e1e1e; /* Elevation 1 */
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+}
+
+#conn_panel {
+    background-color: #272727; /* Elevation 2 */
+    border-radius: 8px;
+}
+
+QGroupBox {
+    font-weight: 500;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    margin-top: 20px;
+    padding-top: 16px;
+    background-color: #1e1e1e;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 16px;
+    padding: 0 4px;
+    color: rgba(255, 255, 255, 0.60); /* Medium-emphasis text */
+}
+
+/* Tab Bar */
+QTabBar::tab {
+    background: transparent;
+    color: rgba(255, 255, 255, 0.60);
+    padding: 12px 24px;
+    margin-right: 4px;
+    border-bottom: 2px solid transparent; /* Material indicator */
+}
+
+QTabBar::tab:selected {
+    color: #bb86fc; /* Primary color */
+    border-bottom: 2px solid #bb86fc;
+    font-weight: 500;
+}
+
+QTabBar::tab:hover {
+    color: rgba(255, 255, 255, 0.87);
+    background: rgba(187, 134, 252, 0.08); /* State layer */
+}
+
+/* Buttons */
+QPushButton {
+    background-color: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.12); /* Outlined button */
+    border-radius: 20px; /* Fully rounded/pill shape */
+    padding: 8px 24px;
+    color: #bb86fc;
+    font-weight: 500;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+QPushButton:hover {
+    background-color: rgba(187, 134, 252, 0.08);
+}
+
+QPushButton:pressed {
+    background-color: rgba(187, 134, 252, 0.12);
+}
+
+/* Primary Filled Buttons */
+QPushButton#btn_success {
+    background-color: #bb86fc; /* Primary color */
+    color: #000000;
+    border: none;
+}
+
+QPushButton#btn_success:hover {
+    background-color: #d1abfd; /* Lighter shade for hover */
+    /* Box shadow is not well supported in QSS, using color change */
+}
+
+QPushButton#btn_success:pressed {
+    background-color: #a35bfa; /* Darker shade */
+}
+
+/* Error/Danger Buttons */
+QPushButton#btn_danger {
+    background-color: #cf6679; /* Material Error */
+    color: #000000;
+    border: none;
+}
+
+QPushButton#btn_danger:hover {
+    background-color: #d98a98;
+}
+
+/* Special Primary variant using secondary/teal */
+QPushButton#btn_primary {
+    background-color: #03dac6; /* Secondary color */
+    color: #000000;
+    border: none;
+}
+
+QPushButton#btn_primary:hover {
+    background-color: #5cede0;
+}
+
+/* Inputs */
+QSpinBox, QDoubleSpinBox, QLineEdit, QComboBox {
+    background-color: #1e1e1e;
+    border: 1px solid rgba(255, 255, 255, 0.38); /* Idle outline */
+    border-radius: 4px;
+    padding: 8px 12px;
+    color: rgba(255, 255, 255, 0.87);
+}
+
+QSpinBox:focus, QLineEdit:focus {
+    border: 2px solid #bb86fc; /* Primary colored thick focus indicator */
+}
+
+/* Editor & Logs */
+#log_widget {
+    background-color: #000000; /* Deepest elevation */
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    font-family: 'Consolas', monospace;
+}
+
+#script_editor {
+    background-color: #000000;
+    color: rgba(255, 255, 255, 0.87);
+    font-family: 'Consolas', monospace;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* Scroll Bars */
+QScrollBar:vertical {
+    border: none;
+    background: #121212;
+    width: 8px;
+}
+
+QScrollBar::handle:vertical {
+    background: rgba(255, 255, 255, 0.38);
+    border-radius: 4px;
+    min-height: 24px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: rgba(255, 255, 255, 0.60);
+}
+
+/* Text */
+#feature_header {
+    font-size: 24px;
+    font-weight: 400; /* Material 3 favors regular weight for large displays */
+    color: rgba(255, 255, 255, 0.87);
+}
+
+#feature_desc {
+    color: rgba(255, 255, 255, 0.60);
+    font-size: 14px;
+}
+
+#window_label[status="connected"] {
+    color: #03dac6; /* Secondary Teal */
+    font-weight: 500;
+}
+
+#status_label[type="success"] { color: #03dac6; }
+#status_label[type="error"] { color: #cf6679; }
+#status_label[type="info"] { color: #bb86fc; }
