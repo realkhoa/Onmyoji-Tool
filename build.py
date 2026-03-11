@@ -37,6 +37,7 @@ def build_app():
         "--windowed",
         "--add-data", f"dsl;dsl",
         "--add-data", f"images;images",
+        "--add-data", f"locales;locales",
         "--name", "OnmyojiBot",
         "main.py"
     ]

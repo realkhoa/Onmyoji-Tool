@@ -42,6 +42,9 @@ from pps_engine import DSLEngine
 import qt_material
 from qt_material import apply_stylesheet, build_stylesheet
 
+from i18n import t, get_i18n
+from i18n import t, get_i18n
+
 
 
 class LineNumberArea(QWidget):
@@ -275,7 +278,7 @@ class PreviewLabel(QLabel):
         self.setMinimumSize(280, 158)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setMouseTracking(True)
-        self.setText("CHƯA KẾT NỐI")
+        self.setText(t("status_disconnected").upper())
         self._pixmap: QPixmap | None = None
         self._frame_w = self._frame_h = 0
 
@@ -459,7 +462,7 @@ class FeatureTab(QWidget):
         self._file_lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         file_row.addWidget(self._file_lbl)
 
-        self._btn_browse = QPushButton("📂 Đổi file")
+        self._btn_browse = QPushButton(t("btn_browse_file"))
         self._btn_browse.setFixedWidth(100)
         self._btn_browse.clicked.connect(self._browse_dsl)
         file_row.addWidget(self._btn_browse)
@@ -469,14 +472,14 @@ class FeatureTab(QWidget):
         btn_layout = QHBoxLayout()
         btn_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
-        self._btn_start = QPushButton("▶ Bắt đầu")
+        self._btn_start = QPushButton(t("btn_start"))
         self._btn_start.setFixedHeight(34)
         self._btn_start.setObjectName("btn_success")
         self._btn_start.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         self._btn_start.clicked.connect(self._start)
         btn_layout.addWidget(self._btn_start)
 
-        self._btn_stop = QPushButton("■ Dừng lại")
+        self._btn_stop = QPushButton(t("btn_stop"))
         self._btn_stop.setFixedHeight(34)
         self._btn_stop.setObjectName("btn_danger")
         self._btn_stop.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
@@ -504,7 +507,7 @@ class FeatureTab(QWidget):
 
     def _browse_dsl(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Chọn DSL script", str(DSL_DIR), "DSL Files (*.dsl *.txt);;All (*)"
+            self, t("title_choose_dsl"), str(DSL_DIR), "DSL Files (*.dsl *.txt);;All (*)"
         )
         if path:
             self._dsl_file = Path(path)
@@ -578,10 +581,7 @@ class GuildRealmRaidTab(FeatureTab):
     def __init__(self, parent=None):
         super().__init__(
             title="⚔ Phá kết giới guild",
-            description=(
-                "Tự động tham gia và tấn công kết giới trong Guild Realm Raid (Phá kết giới). "
-                "Script mặc định: guild_realm_raid.dsl"
-            ),
+            description=t("desc_guild_raid"),
             default_dsl="dsl/builtin/guild_realm_raid.dsl",
             parent=parent,
         )
@@ -591,9 +591,7 @@ class PersonalRealmRaidTab(FeatureTab):
     def __init__(self, parent=None):
         super().__init__(
             title="⚔ Phá kết giới cá nhân",
-            description=(
-                "Tự động phá kết giới chế độ cá nhân. Script mặc định: dsl/builtin/personal_realm_raid.dsl"
-            ),
+            description=t("desc_personal_raid"),
             default_dsl="dsl/builtin/personal_realm_raid.dsl",
             parent=parent,
         )
@@ -603,10 +601,7 @@ class AutoDemonParadeTab(FeatureTab):
     def __init__(self, parent=None):
         super().__init__(
             title="🎯 Ném đậu (Bách Quỷ Dạ Hành)",
-            description=(
-                "Tự động ném đậu trong hoạt động Bách Quỷ Dạ Hành. "
-                "Script mặc định: auto_demon_parade.dsl"
-            ),
+            description=t("desc_demon_parade"),
             default_dsl="dsl/builtin/auto_demon_parade.dsl",
             parent=parent,
         )
@@ -616,10 +611,7 @@ class AutoDuelTab(FeatureTab):
     def __init__(self, parent=None):
         super().__init__(
             title="⚔️ PVP",
-            description=(
-                "Tự động tham gia Duel/PVP và nhấn chuẩn bị/auto. "
-                "Script mặc định: auto_duel.dsl"
-            ),
+            description=t("desc_pvp"),
             default_dsl="dsl/builtin/auto_duel.dsl",
             parent=parent,
         )
@@ -629,7 +621,7 @@ class ScriptConsoleTab(FeatureTab):
     def __init__(self, parent=None):
         super().__init__(
             title="💻 CLI",
-            description="Chạy DSL script tự do. Sử dụng ô console để gõ hoặc load script.",
+            description=t("desc_cli"),
             default_dsl="",  # start empty
             parent=parent,
         )
@@ -643,12 +635,12 @@ class ScriptConsoleTab(FeatureTab):
         layout = self.layout()
         self.script_edit = LineNumberEditor()
         self.script_edit.setObjectName("script_editor")
-        self.script_edit.setPlaceholderText("# Gõ DSL ở đây...")
+        self.script_edit.setPlaceholderText(t("placeholder_dsl"))
         layout.insertWidget(2, self.script_edit, 1)
         # load/save buttons below editor
         btn_row = QHBoxLayout()
-        self.btn_load = QPushButton("Load")
-        self.btn_save = QPushButton("Save")
+        self.btn_load = QPushButton(t("btn_load"))
+        self.btn_save = QPushButton(t("btn_save"))
         btn_row.addWidget(self.btn_load)
         btn_row.addWidget(self.btn_save)
         btn_row.addStretch()
@@ -669,7 +661,7 @@ class ScriptConsoleTab(FeatureTab):
             return
         script = self.script_edit.toPlainText().strip()
         if not script:
-            self.log_signal.emit("[Console] Script trống.")
+            self.log_signal.emit("[Console] " + t("msg_script_empty"))
             return
         self._running = True
         self._engine.reset_stop()
@@ -679,7 +671,7 @@ class ScriptConsoleTab(FeatureTab):
         self.started_signal.emit()
         self._worker_thread = threading.Thread(target=self._run, args=(script,), daemon=True)
         self._worker_thread.start()
-        self.log_signal.emit("[Console] Chạy script...")
+        self.log_signal.emit("[Console] " + t("msg_running_script"))
 
     def _run(self, script: str):
         try:
@@ -696,13 +688,13 @@ class ScriptConsoleTab(FeatureTab):
         self._on_stopped()
 
     def _load(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Load Script", "", "Script Files (*.txt *.dsl);;All (*)")
+        path, _ = QFileDialog.getOpenFileName(self, t("title_load_script"), "", "Script Files (*.txt *.dsl);;All (*)")
         if path:
             with open(path, "r", encoding="utf-8") as f:
                 self.script_edit.setPlainText(f.read())
 
     def _save(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Save Script", "", "Script Files (*.txt *.dsl);;All (*)")
+        path, _ = QFileDialog.getSaveFileName(self, t("title_save_script"), "", "Script Files (*.txt *.dsl);;All (*)")
         if path:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(self.script_edit.toPlainText())
@@ -746,17 +738,17 @@ class AutoClickTab(QWidget):
         scroll.setWidget(container)
 
         # 1. Header
-        header_lbl = QLabel("🖱 Auto Click")
+        header_lbl = QLabel(t("tab_autoclick"))
         header_lbl.setObjectName("feature_header")
         layout.addWidget(header_lbl)
         
-        desc = QLabel("Click tự động vào tọa độ đã chọn. Hỗ trợ lấy tọa độ từ Preview (Double-click) hoặc trực tiếp từ Game Window.")
+        desc = QLabel(t("lbl_autoclick_desc"))
         desc.setWordWrap(True)
         desc.setObjectName("feature_desc")
         layout.addWidget(desc)
 
         # 2. Point Config Group
-        config_box = QGroupBox("📍 Cấu hình điểm click")
+        config_box = QGroupBox(t("grp_point_config"))
         config_layout = QVBoxLayout(config_box)
         config_layout.setSpacing(10)
         
@@ -771,20 +763,20 @@ class AutoClickTab(QWidget):
         coord_row.addWidget(self._spin_x)
         coord_row.addWidget(self._spin_y)
         
-        self._btn_pick_game = QPushButton("🔎 Lấy từ game")
-        self._btn_pick_game.setToolTip("Nhấn để chọn tọa độ trực tiếp trên cửa sổ Onmyoji")
+        self._btn_pick_game = QPushButton(t("btn_pick_game"))
+        self._btn_pick_game.setToolTip(t("tooltip_pick_game"))
         self._btn_pick_game.clicked.connect(self._pick_from_game)
         coord_row.addWidget(self._btn_pick_game)
         config_layout.addLayout(coord_row)
 
         # Mouse button row
         mouse_row = QHBoxLayout()
-        mouse_row.addWidget(QLabel("Chuột:"))
-        self._btn_left = QPushButton("Left")
+        mouse_row.addWidget(QLabel(t("lbl_mouse")))
+        self._btn_left = QPushButton(t("btn_left"))
         self._btn_left.setCheckable(True)
         self._btn_left.setChecked(True)
         self._btn_left.setFixedWidth(80)
-        self._btn_right = QPushButton("Right")
+        self._btn_right = QPushButton(t("btn_right"))
         self._btn_right.setCheckable(True)
         self._btn_right.setFixedWidth(80)
         
@@ -799,15 +791,15 @@ class AutoClickTab(QWidget):
 
         # Condition row
         cond_row = QHBoxLayout()
-        cond_row.addWidget(QLabel("Điều kiện (Ảnh):"))
+        cond_row.addWidget(QLabel(t("lbl_cond_img")))
         self._cond_img = QLineEdit()
-        self._cond_img.setPlaceholderText("images/example.png")
+        self._cond_img.setPlaceholderText(t("placeholder_cond_img"))
         cond_row.addWidget(self._cond_img)
         self._btn_browse_img = QPushButton("...")
         self._btn_browse_img.setFixedWidth(40)
         self._btn_browse_img.clicked.connect(self._browse_image)
         cond_row.addWidget(self._btn_browse_img)
-        cond_row.addWidget(QLabel("Độ khớp:"))
+        cond_row.addWidget(QLabel(t("lbl_thresh")))
         self._cond_thresh = QDoubleSpinBox()
         self._cond_thresh.setRange(0.0, 1.0)
         self._cond_thresh.setValue(0.8)
@@ -816,7 +808,7 @@ class AutoClickTab(QWidget):
         cond_row.addWidget(self._cond_thresh)
         config_layout.addLayout(cond_row)
         
-        self._btn_add = QPushButton("➕ Thêm vào danh sách")
+        self._btn_add = QPushButton(t("btn_add_point"))
         self._btn_add.setObjectName("btn_primary")
         self._btn_add.setFixedHeight(32)
         self._btn_add.clicked.connect(self._add_point)
@@ -825,7 +817,7 @@ class AutoClickTab(QWidget):
         layout.addWidget(config_box)
 
         # 3. Sequence Group
-        seq_box = QGroupBox("📋 Danh sách các bước (Sequence)")
+        seq_box = QGroupBox(t("grp_sequence"))
         seq_layout = QVBoxLayout(seq_box)
         
         self._list_points = QListWidget()
@@ -835,10 +827,10 @@ class AutoClickTab(QWidget):
         seq_layout.addWidget(self._list_points, 1)
         
         list_btns = QHBoxLayout()
-        self._btn_remove = QPushButton("➖ Xóa mục")
+        self._btn_remove = QPushButton(t("btn_remove_point"))
         self._btn_remove.clicked.connect(self._remove_point)
         list_btns.addWidget(self._btn_remove)
-        self._btn_clear = QPushButton("🧹 Xóa hết")
+        self._btn_clear = QPushButton(t("btn_clear_points"))
         self._btn_clear.clicked.connect(self._clear_points)
         list_btns.addWidget(self._btn_clear)
         seq_layout.addLayout(list_btns)
@@ -846,16 +838,16 @@ class AutoClickTab(QWidget):
         layout.addWidget(seq_box)
 
         # 4. Global Options
-        opt_box = QGroupBox("⚙️ Tùy chọn chạy")
+        opt_box = QGroupBox(t("grp_run_options"))
         opt_layout = QHBoxLayout(opt_box)
-        opt_layout.addWidget(QLabel("Giãn cách (s):"))
+        opt_layout.addWidget(QLabel(t("lbl_interval")))
         self._spin_interval = QDoubleSpinBox()
         self._spin_interval.setRange(0.01, 3600.0)
         self._spin_interval.setValue(1.0)
         opt_layout.addWidget(self._spin_interval)
         
         opt_layout.addSpacing(20)
-        opt_layout.addWidget(QLabel("Lặp lại (0=vô tận):"))
+        opt_layout.addWidget(QLabel(t("lbl_repeat")))
         self._spin_repeat = QSpinBox()
         self._spin_repeat.setRange(0, 1000000)
         opt_layout.addWidget(self._spin_repeat)
@@ -863,20 +855,20 @@ class AutoClickTab(QWidget):
 
         # 5. Control (Final check on success/danger names)
         ctrl_layout = QVBoxLayout()
-        self._btn_start = QPushButton("▶ Bắt đầu")
+        self._btn_start = QPushButton(t("btn_start"))
         self._btn_start.setObjectName("btn_success")
         self._btn_start.setFixedHeight(45)
         self._btn_start.clicked.connect(self._start)
         ctrl_layout.addWidget(self._btn_start)
 
-        self._btn_stop = QPushButton("■ Dừng lại")
+        self._btn_stop = QPushButton(t("btn_stop"))
         self._btn_stop.setObjectName("btn_danger")
         self._btn_stop.setFixedHeight(45)
         self._btn_stop.clicked.connect(self._stop)
         self._btn_stop.hide()
         ctrl_layout.addWidget(self._btn_stop)
 
-        self._status_lbl = QLabel("Sẵn sàng")
+        self._status_lbl = QLabel(t("status_ready"))
         self._status_lbl.setObjectName("status_label")
         self._status_lbl.setProperty("type", "success")
         self._status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -902,9 +894,9 @@ class AutoClickTab(QWidget):
 
     def _pick_from_game(self):
         if self._capture is None:
-            self.log_signal.emit("⚠ Chưa attach cửa sổ game!")
+            self.log_signal.emit(t("warning_no_game_attached"))
             return
-        self.log_signal.emit("Nhấn vào cửa sổ game để lấy tọa độ...")
+        self.log_signal.emit(t("msg_pick_game_wait"))
 
         def waiter():
             # wait for a mouse click in the system, then read cursor
@@ -934,7 +926,7 @@ class AutoClickTab(QWidget):
         if self._running:
             return
         if self._capture is None:
-            self.log_signal.emit("⚠ Chưa attach cửa sổ game!")
+            self.log_signal.emit(t("warning_no_game_attached"))
             return
         x = int(self._spin_x.value())
         y = int(self._spin_y.value())
@@ -947,7 +939,7 @@ class AutoClickTab(QWidget):
         self._btn_start.hide()
         self._btn_stop.show()
         self.started_signal.emit()
-        self._status_lbl.setText("⟳ Đang chạy...")
+        self._status_lbl.setText(t("status_running"))
 
         def runner():
             cnt = 0
@@ -995,7 +987,7 @@ class AutoClickTab(QWidget):
     def _on_stopped(self):
         self._btn_stop.hide()
         self._btn_start.show()
-        self._status_lbl.setText("Đã dừng")
+        self._status_lbl.setText(t("status_stopped"))
         self._status_lbl.setProperty("type", "info")
         self._status_lbl.style().unpolish(self._status_lbl)
         self._status_lbl.style().polish(self._status_lbl)
@@ -1005,7 +997,7 @@ class AutoClickTab(QWidget):
         self._stop_evt.set()
         self._running = False
         self._on_stopped()
-        self.log_signal.emit("AutoClick đã dừng.")
+        self.log_signal.emit(t("msg_autoclick_stopped"))
 
     # ---- sequence helpers ----
     def _add_point(self):
@@ -1033,7 +1025,7 @@ class AutoClickTab(QWidget):
 
     def _clear_points(self):
         self._list_points.clear()
-        self.log_signal.emit("Cleared points list")
+        self.log_signal.emit(t("msg_cleared_points"))
 
     def _edit_point(self, item: QListWidgetItem):
         # allow user to change which mouse button for this step
@@ -1042,7 +1034,7 @@ class AutoClickTab(QWidget):
             return
         btn, px, py, img, thresh = data
         choice, ok = QInputDialog.getItem(
-            self, "Chọn chuột", "Button:", ["Left", "Right"],
+            self, t("title_choose_mouse"), "Button", ["Left", "Right"],
             0 if btn.lower().startswith("l") else 1, False
         )
         if ok and choice:
@@ -1055,7 +1047,7 @@ class AutoClickTab(QWidget):
             self.log_signal.emit(f"Edited point ({px},{py}) btn={choice}")
 
     def _browse_image(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Chọn ảnh template", str(DSL_DIR / 'images'), "PNG Files (*.png);;All Files (*)")
+        path, _ = QFileDialog.getOpenFileName(self, t("title_choose_template"), str(DSL_DIR / 'images'), "PNG Files (*.png);;All Files (*)")
         if path:
             try:
                 base = str(DSL_DIR / 'images')
@@ -1099,14 +1091,14 @@ class SoulTab(FeatureTab):
         # default to host
         super().__init__(
             title="🐍 Treo rắn",
-            description="Chế độ treo rắn, chọn chủ phòng hoặc được mời để dùng script phù hợp.",
+            description=t("desc_soul"),
             default_dsl="dsl/builtin/auto_soul_host.dsl",
             parent=parent,
         )
         # insert combo right after header
         root = self.layout()
         self._mode_combo = QComboBox()
-        self._mode_combo.addItems(["Chủ phòng", "Được mời"])
+        self._mode_combo.addItems([t("mode_host"), t("mode_invited")])
         self._mode_combo.setMaxVisibleItems(10)
         self._mode_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         self._mode_combo.currentIndexChanged.connect(self._mode_changed)
@@ -1197,7 +1189,7 @@ class ComingSoonTab(QWidget):
         icon.setObjectName("coming_soon_icon")
         icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(icon)
-        lbl = QLabel(f"{feature_name}\nĐang phát triển...")
+        lbl = QLabel(t("lbl_coming_soon", feature=feature_name))
         lbl.setObjectName("coming_soon_text")
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(lbl)
@@ -1230,6 +1222,10 @@ class ToolsWindow(QMainWindow):
         self._auto_timer = QTimer(self)
         self._auto_timer.timeout.connect(self._try_auto_attach)
         self._auto_timer.start(1000)
+        
+        get_i18n().language_changed.connect(self.update_texts)
+        self.update_texts(get_i18n().current_lang)
+        
         # Thử ngay lần đầu
         self._try_auto_attach()
 
@@ -1258,7 +1254,13 @@ class ToolsWindow(QMainWindow):
         self._theme_switch.toggled.connect(self._toggle_theme)
         header_layout.addWidget(self._theme_switch)
 
-        # FPS Group removed as requested
+        # Language Switcher
+        self._lang_combo = QComboBox()
+        self._lang_combo.addItems(["Tiếng Việt", "English", "Français", "中文"])
+        self._lang_combo.setCurrentIndex(["vi_VN", "en_US", "fr_FR", "zh_CN"].index(get_i18n().current_lang))
+        self._lang_combo.currentIndexChanged.connect(self._on_lang_changed)
+        header_layout.addWidget(self._lang_combo)
+
         header_layout.addStretch()
 
         # Connection Status Display
@@ -1269,13 +1271,13 @@ class ToolsWindow(QMainWindow):
         cp_layout.setContentsMargins(10, 0, 10, 0)
         cp_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self._window_lbl = QLabel("Chưa kết nối")
+        self._window_lbl = QLabel(t("status_disconnected"))
         self._window_lbl.setObjectName("window_label")
         self._window_lbl.setProperty("status", "disconnected")
         cp_layout.addWidget(self._window_lbl)
 
         self._chk_auto = QCheckBox()
-        self._chk_auto.setToolTip("Tự động kết nối")
+        self._chk_auto.setToolTip(t("auto_connect_tooltip"))
         self._chk_auto.setChecked(True)
         self._chk_auto.stateChanged.connect(self._on_auto_toggle)
         cp_layout.addWidget(self._chk_auto)
@@ -1283,7 +1285,7 @@ class ToolsWindow(QMainWindow):
         header_layout.addWidget(self._conn_panel)
 
         # Connect/Disconnect Button
-        self._btn_manual_attach = QPushButton("Kết nối")
+        self._btn_manual_attach = QPushButton(t("btn_connect"))
         self._btn_manual_attach.setObjectName("btn_small")
         self._btn_manual_attach.setFixedHeight(top_h)
         self._btn_manual_attach.clicked.connect(self._manual_attach)
@@ -1301,15 +1303,15 @@ class ToolsWindow(QMainWindow):
         left_layout.setContentsMargins(0, 0, 4, 0)
         left_layout.setSpacing(6)
 
-        preview_group = QGroupBox("Màn hình game")
+        preview_group = QGroupBox(t("group_game_screen"))
         pg_layout = QVBoxLayout(preview_group)
         self._preview = PreviewLabel()
         self._preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         pg_layout.addWidget(self._preview)
 
-        self._coord_lbl = QLabel("X: –  Y: –")
+        self._coord_lbl = QLabel(t("coord_placeholder"))
         self._coord_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self._preview.coord_changed.connect(lambda x, y: self._coord_lbl.setText(f"X:{x}  Y:{y}"))
+        self._preview.coord_changed.connect(lambda x, y: self._coord_lbl.setText(t("coord_format", x=x, y=y)))
         pg_layout.addWidget(self._coord_lbl)
 
         left_layout.addWidget(preview_group, 1)
@@ -1393,14 +1395,14 @@ class ToolsWindow(QMainWindow):
         root.addWidget(splitter, 1)
 
         # ── Log ──────────────────────────────────────────────────────
-        log_box = QGroupBox("Nhật ký hoạt động")
+        log_box = QGroupBox(t("group_activity_log"))
         log_layout = QVBoxLayout(log_box)
         log_layout.setContentsMargins(6, 4, 6, 4)
         self._log = LogWidget()
         log_layout.addWidget(self._log)
 
         log_btn_row = QHBoxLayout()
-        btn_clear = QPushButton("🗑 Xóa log")
+        btn_clear = QPushButton(t("btn_clear_log"))
         btn_clear.setFixedWidth(90)
         btn_clear.clicked.connect(self._log.clear)
         log_btn_row.addWidget(btn_clear)
@@ -1426,6 +1428,31 @@ class ToolsWindow(QMainWindow):
 
     # ── Auto-attach ──────────────────────────────────────────────────────
 
+    def _on_lang_changed(self, idx):
+        langs = ["vi_VN", "en_US", "fr_FR", "zh_CN"]
+        get_i18n().load_language(langs[idx])
+
+    def update_texts(self, lang):
+        if self._capture:
+            self._window_lbl.setText(t("status_connected", name=self._log_name if hasattr(self, '_log_name') else "Onmyoji"))
+            self._btn_manual_attach.setText(t("btn_disconnect"))
+        else:
+            self._window_lbl.setText(t("status_disconnected"))
+            self._btn_manual_attach.setText(t("btn_connect"))
+            
+        self._chk_auto.setToolTip(t("auto_connect_tooltip"))
+        
+        # Update tabs
+        self._tab_bar.setTabText(0, t("tab_guild_raid"))
+        self._tab_bar.setTabText(1, t("tab_personal_raid"))
+        self._tab_bar.setTabText(2, t("tab_autoclick"))
+        self._tab_bar.setTabText(3, t("tab_soul"))
+        self._tab_bar.setTabText(4, t("tab_demon_parade"))
+        self._tab_bar.setTabText(5, t("tab_pvp"))
+        self._tab_bar.setTabText(6, t("tab_cli"))
+        self._tab_bar.setTabText(7, t("tab_guide"))
+        self._tab_bar.setTabText(8, t("tab_others"))
+
     def _try_auto_attach(self):
         if not self._chk_auto.isChecked():
             return
@@ -1448,13 +1475,13 @@ class ToolsWindow(QMainWindow):
         if name:
             self._do_attach(name)
         else:
-             self._log.append_err("Không tìm thấy cửa sổ Onmyoji đang chạy.")
+             self._log.append_err(t("error_no_window"))
 
     def _do_attach(self, name: str):
         try:
             cap = WindowCapture(name)
         except Exception as e:
-            self._log.append_err(f"Lỗi kết nối: {e}")
+            self._log.append_err(t("error_connection", error=e))
             return
         self._capture = cap
         for tab in self._feature_tabs:
@@ -1466,12 +1493,12 @@ class ToolsWindow(QMainWindow):
             self._capture_worker.start()
         else:
             self._capture_worker.set_capture(cap)
-        self._btn_manual_attach.setText("Ngắt")
-        self._window_lbl.setText(f"{name}")
+        self._btn_manual_attach.setText(t("btn_disconnect"))
+        self._window_lbl.setText(t("status_connected", name=name))
         self._window_lbl.setProperty("status", "connected")
         self._window_lbl.style().unpolish(self._window_lbl)
         self._window_lbl.style().polish(self._window_lbl)
-        self._log.append_ok(f"Đã kết nối: {name}")
+        self._log_name = name; self._log.append_ok(t("msg_connected", name=name))
 
     def _do_detach(self, silent=False):
         self._capture_worker.set_capture(None)
@@ -1479,22 +1506,22 @@ class ToolsWindow(QMainWindow):
         for tab in self._feature_tabs:
             tab.set_capture(None)
         self._preview.clear()
-        self._preview.setText("CHƯA KẾT NỐI")
-        self._btn_manual_attach.setText("Kết nối")
-        self._window_lbl.setText("Chưa kết nối")
+        self._preview.setText(t("status_disconnected").upper())
+        self._btn_manual_attach.setText(t("btn_connect"))
+        self._window_lbl.setText(t("status_disconnected"))
         self._window_lbl.setProperty("status", "disconnected")
         self._window_lbl.style().unpolish(self._window_lbl)
         self._window_lbl.style().polish(self._window_lbl)
         if not silent:
-            self._log.append_info("Đã ngắt kết nối.")
+            self._log.append_info(t("msg_disconnected"))
 
     def _on_auto_toggle(self, state):
         if state == Qt.CheckState.Checked:
             self._auto_timer.start(1000)
-            self._log.append_info("Bật tự động kết nối.")
+            self._log.append_info(t("msg_auto_connect_on"))
         else:
             self._auto_timer.stop()
-            self._log.append_info("Tắt tự động kết nối.")
+            self._log.append_info(t("msg_auto_connect_off"))
 
     # ── Frame / Feature callbacks ─────────────────────────────────────────
 
@@ -1552,7 +1579,7 @@ class ToolsWindow(QMainWindow):
         try:
             if hasattr(app, '_theme_cache') and mode_qss_file in app._theme_cache:
                 app.setStyleSheet(app._theme_cache[mode_qss_file])
-                self._log.append_info(f"Đã chuyển sang giao diện: {'Tối' if checked else 'Sáng'} (Instant)")
+                self._log.append_info(t("msg_theme_changed", theme=t("theme_dark") if checked else t("theme_light")) + " (Instant)")
             else:
                 # Fallback if cache missing
                 from qt_material import build_stylesheet
@@ -1573,7 +1600,7 @@ class ToolsWindow(QMainWindow):
                     pass
                     
                 app.setStyleSheet(qss)
-                self._log.append_info(f"Đã chuyển sang giao diện: {'Tối' if checked else 'Sáng'}")
+                self._log.append_info(t("msg_theme_changed", theme=t("theme_dark") if checked else t("theme_light")))
             
             # Propagate theme change to all LineNumberEditor instances
             for tab in self._feature_tabs:
@@ -1581,7 +1608,7 @@ class ToolsWindow(QMainWindow):
                     tab.script_edit.set_theme(checked)
                     
         except Exception as e:
-            self._log.append_err(f"Lỗi chuyển theme: {e}")
+            self._log.append_err(t("error_theme_change", error=e))
 
     # _restore_window removed
 
