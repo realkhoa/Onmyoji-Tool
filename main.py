@@ -40,7 +40,7 @@ from PyQt6 import QtSvg # Required for Material Design SVG icons
 from screenshot import WindowCapture
 from pps_engine import DSLEngine
 import qt_material
-from qt_material import apply_stylesheet
+from qt_material import apply_stylesheet, build_stylesheet
 
 
 
@@ -56,15 +56,98 @@ class LineNumberArea(QWidget):
         self._editor.lineNumberAreaPaintEvent(event)
 
 
+from PyQt6.QtCore import pyqtProperty, QPropertyAnimation, QEasingCurve
+
+class ThemeToggle(QWidget):
+    """Custom animated modern toggle switch with internal icons."""
+    toggled = pyqtSignal(bool)
+
+    def __init__(self, parent=None, width=58, height=30):
+        super().__init__(parent)
+        self.setFixedSize(width, height)
+        self._checked = False
+        self._thumb_pos = 4.0
+        self._anim = None
+        
+        # Colors
+        self._bg_off = QColor("#555555")
+        self._bg_on = QColor("#00bcd4")
+        self._thumb_color = QColor("#ffffff")
+
+    def isChecked(self):
+        return self._checked
+
+    def setChecked(self, checked):
+        if self._checked == checked:
+            return
+        self._checked = checked
+        self._animate(checked)
+        self.toggled.emit(checked)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.setChecked(not self._checked)
+
+    def _animate(self, checked):
+        target = float(self.width() - self.height() + 4) if checked else 4.0
+        self._anim = QPropertyAnimation(self, b"thumb_pos")
+        self._anim.setDuration(250)
+        self._anim.setStartValue(self._thumb_pos)
+        self._anim.setEndValue(target)
+        self._anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        self._anim.start()
+
+    @pyqtProperty(float)
+    def thumb_pos(self):
+        return self._thumb_pos
+
+    @thumb_pos.setter
+    def thumb_pos(self, pos):
+        self._thumb_pos = pos
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Draw background pill
+        bg_col = self._bg_on if self._checked else self._bg_off
+        p.setBrush(bg_col)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRoundedRect(self.rect(), self.height()/2, self.height()/2)
+        
+        # Draw thumb circle
+        thumb_size = self.height() - 8
+        p.setBrush(self._thumb_color)
+        p.drawEllipse(QRect(int(self._thumb_pos), 4, thumb_size, thumb_size))
+        
+        # Draw icon inside thumb
+        p.setPen(QColor("#333333"))
+        font = p.font()
+        font.setPixelSize(int(thumb_size * 0.7))
+        p.setFont(font)
+        
+        icon = "🌙" if self._checked else "☀️"
+        p.drawText(QRect(int(self._thumb_pos), 4, thumb_size, thumb_size), Qt.AlignmentFlag.AlignCenter, icon)
+        p.end()
+
+
 class LineNumberEditor(QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.lineNumberArea = LineNumberArea(self)
+        
+        # Theme colors
+        self._ln_bg = QColor("#1e1e1e")
+        self._ln_text = QColor("#b3b3b3")
+        self._line_hi = QColor("#2c2c2c")
+        
         self.blockCountChanged.connect(self.updateLineNumberAreaWidth)
         self.updateRequest.connect(self.updateLineNumberArea)
         self.cursorPositionChanged.connect(self.highlightCurrentLine)
+        
         self.updateLineNumberAreaWidth(0)
-        self.highlightCurrentLine()
+        self.set_theme(True) # Default dark
 
     def lineNumberAreaWidth(self):
         digits = len(str(self.blockCount()))
@@ -93,7 +176,7 @@ class LineNumberEditor(QPlainTextEdit):
 
     def lineNumberAreaPaintEvent(self, event):
         painter = QPainter(self.lineNumberArea)
-        painter.fillRect(event.rect(), QColor("#282828"))
+        painter.fillRect(event.rect(), self._ln_bg)
         block = self.firstVisibleBlock()
         blockNumber = block.blockNumber()
         top = self.blockBoundingGeometry(block).translated(self.contentOffset()).top()
@@ -101,7 +184,7 @@ class LineNumberEditor(QPlainTextEdit):
         while block.isValid() and top <= event.rect().bottom():
             if block.isVisible() and bottom >= event.rect().top():
                 number = str(blockNumber + 1)
-                painter.setPen(QColor("#b3b3b3"))
+                painter.setPen(self._ln_text)
                 painter.drawText(
                     0,
                     int(top),
@@ -119,12 +202,29 @@ class LineNumberEditor(QPlainTextEdit):
         extraSelections = []
         if not self.isReadOnly():
             selection = QTextEdit.ExtraSelection()
-            selection.format.setBackground(QColor("#333333"))
+            selection.format.setBackground(self._line_hi)
             selection.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
             selection.cursor = self.textCursor()
             selection.cursor.clearSelection()
             extraSelections.append(selection)
         self.setExtraSelections(extraSelections)
+
+    def set_theme(self, is_dark: bool):
+        if is_dark:
+            self._ln_bg = QColor("#1e1e1e")
+            self._ln_text = QColor("#b3b3b3")
+            self._line_hi = QColor("#2c2c2c")
+            self.setProperty("theme", "dark")
+        else:
+            self._ln_bg = QColor("#f0f0f0")
+            self._ln_text = QColor("#999999")
+            self._line_hi = QColor("#e8e8e8")
+            self.setProperty("theme", "light")
+        
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.highlightCurrentLine()
+        self.lineNumberArea.update()
 
 
 BASE_DIR = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
@@ -288,8 +388,8 @@ class CaptureWorker(QThread):
 class LogWidget(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("log_widget")
         self.setReadOnly(True)
-        self.setFont(QFont("Consolas", 9))
         self.setMaximumHeight(140)
 
     def append_log(self, msg: str, color: str = "#b3b3b3"):
@@ -341,10 +441,11 @@ class FeatureTab(QWidget):
 
         # ── Header ──────────────────────────────────────────────────
         header = QLabel(self.title)
-        header.setFont(QFont("Consolas", 15, QFont.Weight.Bold))
+        header.setObjectName("feature_header")
         root.addWidget(header)
 
         desc_lbl = QLabel(description)
+        desc_lbl.setObjectName("feature_desc")
         desc_lbl.setWordWrap(True)
         root.addWidget(desc_lbl)
 
@@ -370,7 +471,6 @@ class FeatureTab(QWidget):
 
         self._btn_start = QPushButton("▶ Bắt đầu")
         self._btn_start.setFixedHeight(34)
-        self._btn_start.setFont(QFont("Consolas", 10, QFont.Weight.Bold))
         self._btn_start.setObjectName("btn_success")
         self._btn_start.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         self._btn_start.clicked.connect(self._start)
@@ -378,7 +478,6 @@ class FeatureTab(QWidget):
 
         self._btn_stop = QPushButton("■ Dừng lại")
         self._btn_stop.setFixedHeight(34)
-        self._btn_stop.setFont(QFont("Consolas", 10, QFont.Weight.Bold))
         self._btn_stop.setObjectName("btn_danger")
         self._btn_stop.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         self._btn_stop.clicked.connect(self._stop)
@@ -543,8 +642,8 @@ class ScriptConsoleTab(FeatureTab):
         # insert editor area
         layout = self.layout()
         self.script_edit = LineNumberEditor()
+        self.script_edit.setObjectName("script_editor")
         self.script_edit.setPlaceholderText("# Gõ DSL ở đây...")
-        self.script_edit.setFont(QFont("Consolas", 10))
         layout.insertWidget(2, self.script_edit, 1)
         # load/save buttons below editor
         btn_row = QHBoxLayout()
@@ -631,19 +730,37 @@ class AutoClickTab(QWidget):
         self._active = False
 
     def _build_ui(self):
-        root = QVBoxLayout(self)
-        root.setSpacing(8)
-        root.setContentsMargins(12, 12, 12, 12)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Wrap everything in a scroll area for responsiveness
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        main_layout.addWidget(scroll)
+        
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setSpacing(15)
+        layout.setContentsMargins(15, 15, 15, 15)
+        scroll.setWidget(container)
 
-        header = QLabel("🖱 Auto Click")
-        header.setFont(QFont("Consolas", 15, QFont.Weight.Bold))
-        root.addWidget(header)
-
-        desc = QLabel("Click tự động vào tọa độ đã chọn (hỗ trợ lấy tọa độ từ preview hoặc lấy trực tiếp từ cửa sổ game). Double-click preview để lấy tọa độ.")
+        # 1. Header
+        header_lbl = QLabel("🖱 Auto Click")
+        header_lbl.setObjectName("feature_header")
+        layout.addWidget(header_lbl)
+        
+        desc = QLabel("Click tự động vào tọa độ đã chọn. Hỗ trợ lấy tọa độ từ Preview (Double-click) hoặc trực tiếp từ Game Window.")
         desc.setWordWrap(True)
-        root.addWidget(desc)
+        desc.setObjectName("feature_desc")
+        layout.addWidget(desc)
 
-        # Coordinate row
+        # 2. Point Config Group
+        config_box = QGroupBox("📍 Cấu hình điểm click")
+        config_layout = QVBoxLayout(config_box)
+        config_layout.setSpacing(10)
+        
+        # Coords row
         coord_row = QHBoxLayout()
         self._spin_x = QSpinBox()
         self._spin_x.setRange(0, 10000)
@@ -653,115 +770,120 @@ class AutoClickTab(QWidget):
         self._spin_y.setPrefix("Y: ")
         coord_row.addWidget(self._spin_x)
         coord_row.addWidget(self._spin_y)
-
+        
         self._btn_pick_game = QPushButton("🔎 Lấy từ game")
+        self._btn_pick_game.setToolTip("Nhấn để chọn tọa độ trực tiếp trên cửa sổ Onmyoji")
         self._btn_pick_game.clicked.connect(self._pick_from_game)
         coord_row.addWidget(self._btn_pick_game)
-        root.addLayout(coord_row)
+        config_layout.addLayout(coord_row)
 
-        # mouse button selector for each new point (toggle buttons for visibility)
-        btn_row = QHBoxLayout()
-        btn_row.addWidget(QLabel("Button:"))
+        # Mouse button row
+        mouse_row = QHBoxLayout()
+        mouse_row.addWidget(QLabel("Chuột:"))
         self._btn_left = QPushButton("Left")
         self._btn_left.setCheckable(True)
+        self._btn_left.setChecked(True)
+        self._btn_left.setFixedWidth(80)
         self._btn_right = QPushButton("Right")
         self._btn_right.setCheckable(True)
-        # group so only one can be down
+        self._btn_right.setFixedWidth(80)
+        
         self._btn_grp = QButtonGroup(self)
         self._btn_grp.addButton(self._btn_left)
         self._btn_grp.addButton(self._btn_right)
-        self._btn_left.setChecked(True)
-        for b in (self._btn_left, self._btn_right):
-            b.setFixedWidth(60)
-        btn_row.addWidget(self._btn_left)
-        btn_row.addWidget(self._btn_right)
-        root.addLayout(btn_row)
+        
+        mouse_row.addWidget(self._btn_left)
+        mouse_row.addWidget(self._btn_right)
+        mouse_row.addStretch()
+        config_layout.addLayout(mouse_row)
 
-        hint = QLabel("(Hoặc double-click vào preview để lấy tọa độ)")
-        root.addWidget(hint)
-
-        # Condition row (per-point)
+        # Condition row
         cond_row = QHBoxLayout()
-        cond_row.addWidget(QLabel("If image (optional):"))
+        cond_row.addWidget(QLabel("Điều kiện (Ảnh):"))
         self._cond_img = QLineEdit()
         self._cond_img.setPlaceholderText("images/example.png")
-        cond_row.addWidget(self._cond_img, 1)
-        self._btn_browse_img = QPushButton("Browse")
-        self._btn_browse_img.setFixedWidth(80)
+        cond_row.addWidget(self._cond_img)
+        self._btn_browse_img = QPushButton("...")
+        self._btn_browse_img.setFixedWidth(40)
         self._btn_browse_img.clicked.connect(self._browse_image)
         cond_row.addWidget(self._btn_browse_img)
-        cond_row.addWidget(QLabel("Thresh:"))
+        cond_row.addWidget(QLabel("Độ khớp:"))
         self._cond_thresh = QDoubleSpinBox()
         self._cond_thresh.setRange(0.0, 1.0)
-        self._cond_thresh.setSingleStep(0.01)
         self._cond_thresh.setValue(0.8)
-        self._cond_thresh.setFixedWidth(100)
+        self._cond_thresh.setSingleStep(0.05)
+        self._cond_thresh.setFixedWidth(70)
         cond_row.addWidget(self._cond_thresh)
-        root.addLayout(cond_row)
+        config_layout.addLayout(cond_row)
+        
+        self._btn_add = QPushButton("➕ Thêm vào danh sách")
+        self._btn_add.setObjectName("btn_primary")
+        self._btn_add.setFixedHeight(32)
+        self._btn_add.clicked.connect(self._add_point)
+        config_layout.addWidget(self._btn_add)
+        
+        layout.addWidget(config_box)
 
-        # Points list (sequence)
-        seq_row = QHBoxLayout()
+        # 3. Sequence Group
+        seq_box = QGroupBox("📋 Danh sách các bước (Sequence)")
+        seq_layout = QVBoxLayout(seq_box)
+        
         self._list_points = QListWidget()
-        self._list_points.setFixedHeight(140)
+        self._list_points.setFixedHeight(160)
         self._list_points.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self._list_points.itemDoubleClicked.connect(self._edit_point)
-        seq_row.addWidget(self._list_points, 1)
-
-        seq_btns = QVBoxLayout()
-        self._btn_add = QPushButton("➕ Thêm")
-        self._btn_add.clicked.connect(self._add_point)
-        seq_btns.addWidget(self._btn_add)
-        self._btn_remove = QPushButton("➖ Xóa")
+        seq_layout.addWidget(self._list_points, 1)
+        
+        list_btns = QHBoxLayout()
+        self._btn_remove = QPushButton("➖ Xóa mục")
         self._btn_remove.clicked.connect(self._remove_point)
-        seq_btns.addWidget(self._btn_remove)
+        list_btns.addWidget(self._btn_remove)
         self._btn_clear = QPushButton("🧹 Xóa hết")
         self._btn_clear.clicked.connect(self._clear_points)
-        seq_btns.addWidget(self._btn_clear)
-        seq_btns.addStretch()
-        seq_row.addLayout(seq_btns)
-        root.addLayout(seq_row)
+        list_btns.addWidget(self._btn_clear)
+        seq_layout.addLayout(list_btns)
+        
+        layout.addWidget(seq_box)
 
-        # Options row
-        opts = QHBoxLayout()
-        # (button selection is handled above per step)
-
-        opts.addSpacing(8)
-        opts.addWidget(QLabel("Interval(s):"))
+        # 4. Global Options
+        opt_box = QGroupBox("⚙️ Tùy chọn chạy")
+        opt_layout = QHBoxLayout(opt_box)
+        opt_layout.addWidget(QLabel("Giãn cách (s):"))
         self._spin_interval = QDoubleSpinBox()
         self._spin_interval.setRange(0.01, 3600.0)
-        self._spin_interval.setSingleStep(0.1)
         self._spin_interval.setValue(1.0)
-        opts.addWidget(self._spin_interval)
-
-        opts.addSpacing(8)
-        opts.addWidget(QLabel("Repeat (0=infinite):"))
+        opt_layout.addWidget(self._spin_interval)
+        
+        opt_layout.addSpacing(20)
+        opt_layout.addWidget(QLabel("Lặp lại (0=vô tận):"))
         self._spin_repeat = QSpinBox()
         self._spin_repeat.setRange(0, 1000000)
-        self._spin_repeat.setValue(0)
-        opts.addWidget(self._spin_repeat)
+        opt_layout.addWidget(self._spin_repeat)
+        layout.addWidget(opt_box)
 
-        root.addLayout(opts)
-
-        # Start/Stop
-        btn_row = QHBoxLayout()
-        self._btn_start = QPushButton("▶  Bắt đầu")
-        self._btn_start.setFixedHeight(40)
-        self._btn_start.setFont(QFont("Consolas", 11, QFont.Weight.Bold))
+        # 5. Control (Final check on success/danger names)
+        ctrl_layout = QVBoxLayout()
+        self._btn_start = QPushButton("▶ Bắt đầu")
         self._btn_start.setObjectName("btn_success")
+        self._btn_start.setFixedHeight(45)
         self._btn_start.clicked.connect(self._start)
-        btn_row.addWidget(self._btn_start)
-        self._btn_stop = QPushButton("■  Dừng lại")
-        self._btn_stop.setFixedHeight(40)
-        self._btn_stop.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        ctrl_layout.addWidget(self._btn_start)
+
+        self._btn_stop = QPushButton("■ Dừng lại")
         self._btn_stop.setObjectName("btn_danger")
+        self._btn_stop.setFixedHeight(45)
         self._btn_stop.clicked.connect(self._stop)
         self._btn_stop.hide()
-        btn_row.addWidget(self._btn_stop)
-        root.addLayout(btn_row)
+        ctrl_layout.addWidget(self._btn_stop)
 
         self._status_lbl = QLabel("Sẵn sàng")
-        self._status_lbl.setStyleSheet("color:#1db954; font-weight:600;")
-        root.addWidget(self._status_lbl)
+        self._status_lbl.setObjectName("status_label")
+        self._status_lbl.setProperty("type", "success")
+        self._status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ctrl_layout.addWidget(self._status_lbl)
+        
+        layout.addLayout(ctrl_layout)
+        layout.addStretch()
 
     def set_capture(self, cap: WindowCapture | None):
         self._capture = cap
@@ -874,6 +996,9 @@ class AutoClickTab(QWidget):
         self._btn_stop.hide()
         self._btn_start.show()
         self._status_lbl.setText("Đã dừng")
+        self._status_lbl.setProperty("type", "info")
+        self._status_lbl.style().unpolish(self._status_lbl)
+        self._status_lbl.style().polish(self._status_lbl)
         self.stopped_signal.emit()
 
     def _stop(self):
@@ -1069,11 +1194,11 @@ class ComingSoonTab(QWidget):
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon = QLabel("🚧")
-        icon.setFont(QFont("Segoe UI", 32))
+        icon.setObjectName("coming_soon_icon")
         icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(icon)
         lbl = QLabel(f"{feature_name}\nĐang phát triển...")
-        lbl.setFont(QFont("Segoe UI", 13))
+        lbl.setObjectName("coming_soon_text")
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(lbl)
 
@@ -1094,7 +1219,12 @@ class ToolsWindow(QMainWindow):
         self._capture_worker.frame_ready.connect(self._on_frame)
 
         self._feature_tabs: list[FeatureTab] = []
+        self._current_theme = 'dark_teal.xml'
         self._init_ui()
+        # Set switch to match initial dark theme
+        self._theme_switch.blockSignals(True)
+        self._theme_switch.setChecked(True)
+        self._theme_switch.blockSignals(False)
 
         # Auto-attach timer
         self._auto_timer = QTimer(self)
@@ -1122,6 +1252,12 @@ class ToolsWindow(QMainWindow):
         # Consistent height for all header sub-elements
         top_h = 32
 
+        # Theme Toggle Switch
+        self._theme_switch = ThemeToggle()
+        self._theme_switch.setChecked(True)  # Default dark check (app starts dark)
+        self._theme_switch.toggled.connect(self._toggle_theme)
+        header_layout.addWidget(self._theme_switch)
+
         # FPS Group removed as requested
         header_layout.addStretch()
 
@@ -1134,7 +1270,8 @@ class ToolsWindow(QMainWindow):
         cp_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self._window_lbl = QLabel("Chưa kết nối")
-        self._window_lbl.setFont(QFont("Consolas", 9))
+        self._window_lbl.setObjectName("window_label")
+        self._window_lbl.setProperty("status", "disconnected")
         cp_layout.addWidget(self._window_lbl)
 
         self._chk_auto = QCheckBox()
@@ -1149,7 +1286,6 @@ class ToolsWindow(QMainWindow):
         self._btn_manual_attach = QPushButton("Kết nối")
         self._btn_manual_attach.setObjectName("btn_small")
         self._btn_manual_attach.setFixedHeight(top_h)
-
         self._btn_manual_attach.clicked.connect(self._manual_attach)
         header_layout.addWidget(self._btn_manual_attach)
         
@@ -1332,7 +1468,9 @@ class ToolsWindow(QMainWindow):
             self._capture_worker.set_capture(cap)
         self._btn_manual_attach.setText("Ngắt")
         self._window_lbl.setText(f"{name}")
-        self._window_lbl.setStyleSheet("color:#1db954; font-weight:600;")
+        self._window_lbl.setProperty("status", "connected")
+        self._window_lbl.style().unpolish(self._window_lbl)
+        self._window_lbl.style().polish(self._window_lbl)
         self._log.append_ok(f"Đã kết nối: {name}")
 
     def _do_detach(self, silent=False):
@@ -1344,7 +1482,9 @@ class ToolsWindow(QMainWindow):
         self._preview.setText("CHƯA KẾT NỐI")
         self._btn_manual_attach.setText("Kết nối")
         self._window_lbl.setText("Chưa kết nối")
-        self._window_lbl.setStyleSheet("color:#6a6a6a;")
+        self._window_lbl.setProperty("status", "disconnected")
+        self._window_lbl.style().unpolish(self._window_lbl)
+        self._window_lbl.style().polish(self._window_lbl)
         if not silent:
             self._log.append_info("Đã ngắt kết nối.")
 
@@ -1401,6 +1541,48 @@ class ToolsWindow(QMainWindow):
     def _on_log(self, msg: str):
         self._log.append_log(msg)
 
+    def _toggle_theme(self, checked: bool):
+        # checked = True -> Dark mode, False -> Light mode
+        # Use standard material themes as base
+        base_theme = 'dark_teal.xml' if checked else 'light_teal.xml'
+        mode_qss_file = 'dark_styles.qss' if checked else 'light_styles.qss'
+        self._current_theme = mode_qss_file
+        
+        app = QApplication.instance()
+        try:
+            if hasattr(app, '_theme_cache') and mode_qss_file in app._theme_cache:
+                app.setStyleSheet(app._theme_cache[mode_qss_file])
+                self._log.append_info(f"Đã chuyển sang giao diện: {'Tối' if checked else 'Sáng'} (Instant)")
+            else:
+                # Fallback if cache missing
+                from qt_material import build_stylesheet
+                extra = {
+                    'danger': '#e22134',
+                    'warning': '#ffc107',
+                    'success': '#1db954',
+                    'font_family': 'Consolas',
+                    'density_scale': '-1',
+                }
+                qss = build_stylesheet(base_theme, extra=extra)
+                
+                # Merge with custom mode-specific QSS
+                try:
+                    mode_qss = (BASE_DIR / mode_qss_file).read_text(encoding="utf-8")
+                    qss += "\n" + mode_qss
+                except:
+                    pass
+                    
+                app.setStyleSheet(qss)
+                self._log.append_info(f"Đã chuyển sang giao diện: {'Tối' if checked else 'Sáng'}")
+            
+            # Propagate theme change to all LineNumberEditor instances
+            for tab in self._feature_tabs:
+                if hasattr(tab, "script_edit") and isinstance(tab.script_edit, LineNumberEditor):
+                    tab.script_edit.set_theme(checked)
+                    
+        except Exception as e:
+            self._log.append_err(f"Lỗi chuyển theme: {e}")
+
     # _restore_window removed
 
     # ── Cleanup ───────────────────────────────────────────────────────────
@@ -1419,6 +1601,8 @@ class ToolsWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+    
+    # Global theme config (consistent across toggles)
     extra = {
         'danger': '#e22134',
         'warning': '#ffc107',
@@ -1426,11 +1610,35 @@ def main():
         'font_family': 'Consolas',
         'density_scale': '-1',
     }
-    # Apply the theme natively with PyQt6
+    
+    # Pre-cache stylesheets to avoid lag during switching
     try:
-        apply_stylesheet(app, theme='dark_teal.xml', extra=extra)
+        def get_merged_qss(base_xml, mode_qss_name):
+            base_qss = build_stylesheet(base_xml, extra=extra)
+            try:
+                mode_qss = (BASE_DIR / mode_qss_name).read_text(encoding="utf-8")
+                return base_qss + "\n" + mode_qss
+            except:
+                return base_qss
+
+        app._theme_cache = {
+            'dark_styles.qss': get_merged_qss('dark_teal.xml', 'dark_styles.qss'),
+            'light_styles.qss': get_merged_qss('light_teal.xml', 'light_styles.qss'),
+        }
+    except Exception as e:
+        print(f"[THEME CACHE ERROR] {e}")
+        app._theme_cache = {}
+
+    # Apply the initial theme
+    try:
+        if 'dark_styles.qss' in app._theme_cache:
+            app.setStyleSheet(app._theme_cache['dark_styles.qss'])
+        else:
+            # Absolute fallback
+            apply_stylesheet(app, theme='dark_teal.xml', extra=extra)
     except Exception as e:
         print(f"[THEME ERROR] {e}")
+
     win = ToolsWindow()
     win.show()
     sys.exit(app.exec())
