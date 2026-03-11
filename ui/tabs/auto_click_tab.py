@@ -87,10 +87,10 @@ class AutoClickTab(QWidget):
         coord_row.addWidget(self._spin_x)
         coord_row.addWidget(self._spin_y)
         
-        self._btn_pick_game = QPushButton(t("btn_pick_game"))
-        self._btn_pick_game.setToolTip(t("tooltip_pick_game"))
-        self._btn_pick_game.clicked.connect(self._pick_from_game)
-        coord_row.addWidget(self._btn_pick_game)
+        # self._btn_pick_game = QPushButton(t("btn_pick_game"))
+        # self._btn_pick_game.setToolTip(t("tooltip_pick_game"))
+        # self._btn_pick_game.clicked.connect(self._pick_from_game)
+        # coord_row.addWidget(self._btn_pick_game)
         config_layout.addLayout(coord_row)
 
         # Mouse button row
