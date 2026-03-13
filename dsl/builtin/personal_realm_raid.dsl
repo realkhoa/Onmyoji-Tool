@@ -1,3 +1,6 @@
+binding $threshole number 0.8
+binding $instant_reload_on_failure boolean False
+
 loop forever {
   if exists('realm_raid_reward_pot.png') {
     find_and_click('realm_raid_reward_pot.png')

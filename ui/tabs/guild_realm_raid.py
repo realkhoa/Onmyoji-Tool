@@ -1,6 +1,7 @@
 from ui.tabs.feature_tab import FeatureTab
 from i18n import t
 
+
 class GuildRealmRaidTab(FeatureTab):
     def __init__(self, parent=None):
         super().__init__(

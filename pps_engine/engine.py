@@ -11,7 +11,7 @@ from screenshot import WindowCapture
 from .exceptions import DSLError, BreakLoop, ContinueLoop, ReturnFunc
 from .window import WindowMixin
 from .vision import VisionMixin
-from .parser import _tokenize, _find_matching_end, _find_matching_until
+from .parser import _tokenize, _find_matching_end, _find_matching_until, parse_bindings
 
 class DSLEngine(WindowMixin, VisionMixin):
     """Thông dịch và chạy DSL script."""
@@ -61,6 +61,10 @@ class DSLEngine(WindowMixin, VisionMixin):
             stripped = raw.strip()
             if not stripped or stripped.startswith("#"):
                 continue
+            # skip binding declarations — they are metadata, not executable statements
+            toks = _tokenize(stripped)
+            if toks and toks[0].lower() == "binding":
+                continue
             lines.append(stripped)
         return lines
 
@@ -71,8 +75,15 @@ class DSLEngine(WindowMixin, VisionMixin):
             return token[1:-1]
         return token
 
-    def execute(self, script: str, log_fn: Optional[Callable[[str], None]] = None):
+    def execute(self, script: str, log_fn: Optional[Callable[[str], None]] = None, bindings: Optional[dict] = None):
+        # Clear runtime variables and apply optional Python-provided bindings.
         self._variables.clear()
+        if bindings:
+            for k, v in bindings.items():
+                try:
+                    self._variables[k] = float(v)
+                except Exception:
+                    self._variables[k] = v
         self._prev_gray_roi = None
         self._script_lines = self._parse_lines(script)
         lines = self._script_lines
@@ -543,7 +554,7 @@ class DSLEngine(WindowMixin, VisionMixin):
             return False
 
         if len(tokens) >= 3:
-            var_val = self._variables.get(tokens[0], 0)
+            var_val = self._get_token_value(tokens[0])
             op = tokens[1]
             rhs_tok = tokens[2]
             if rhs_tok.lower() in ("true", "false"):
@@ -552,7 +563,7 @@ class DSLEngine(WindowMixin, VisionMixin):
                 try:
                     rhs = float(rhs_tok)
                 except ValueError:
-                    rhs = self._variables.get(rhs_tok, 0)
+                    rhs = self._get_token_value(rhs_tok)
             if op == ">": return var_val > rhs
             elif op == "<": return var_val < rhs
             elif op in ("==", "="): return var_val == rhs
@@ -576,6 +587,23 @@ class DSLEngine(WindowMixin, VisionMixin):
                 except Exception:
                     pass
         return images, threshold
+
+    def _get_token_value(self, token: str):
+        # Resolve a token which may be a $var, number, quoted string, expression, or named variable
+        if not token:
+            return 0
+        if token.startswith("$"):
+            name = token[1:]
+            return self._variables.get(name, 0)
+        if (token.startswith("'") and token.endswith("'")) or (token.startswith('"') and token.endswith('"')):
+            return token[1:-1]
+        try:
+            return float(token)
+        except Exception:
+            try:
+                return self._eval_expr(token)
+            except Exception:
+                return self._variables.get(token, 0)
 
     def _parse_wait_args(self, tokens: list[str]) -> tuple[list[str], float]:
         images = []
@@ -627,7 +655,17 @@ class DSLEngine(WindowMixin, VisionMixin):
             time.sleep(min(0.1, end_time - time.time()))
 
     def _eval_expr(self, expr: str):
+        # Enable using $var inside expressions by substituting them with
+        # safe placeholder names and injecting their values into locals.
         local_ns = {k: v for k, v in self._variables.items()}
+        # find $var occurrences and replace with __dsl_var_<name>
+        def _subst_var(match):
+            name = match.group(1)
+            placeholder = f"__dsl_var_{name}"
+            # inject current value (fallback 0)
+            local_ns.setdefault(placeholder, self._variables.get(name, 0))
+            return placeholder
+        expr = re.sub(r"\$([A-Za-z_][A-Za-z0-9_]*)", _subst_var, expr)
         def exists(*args):
             images = []
             thresh = 0.8
@@ -669,10 +707,16 @@ class DSLEngine(WindowMixin, VisionMixin):
         return eval(expr, {"__builtins__": {}}, local_ns)
 
     def _resolve_value(self, token: str) -> float:
+        if not token:
+            return 0.0
+        # quoted string -> strip
         if (token.startswith("'") and token.endswith("'")) or (
             token.startswith('"') and token.endswith('"')
         ):
             token = token[1:-1]
+        # $var -> binding lookup
+        if token.startswith("$"):
+            return float(self._variables.get(token[1:], 0))
         try:
             return float(token)
         except ValueError:
@@ -680,4 +724,4 @@ class DSLEngine(WindowMixin, VisionMixin):
             try:
                 return float(val)
             except Exception:
-                return self._variables.get(token, 0)
+                return float(self._variables.get(token, 0))
