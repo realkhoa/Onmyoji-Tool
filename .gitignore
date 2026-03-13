@@ -106,3 +106,5 @@ node_modules/
 
 releases
 dsl/images/temp
+images/temp/*
+dsl/auto-click
