@@ -397,6 +397,37 @@ QToolTip {
 }
 
 #feature_header { font-size: 20px; font-weight: 600; }
+#feature_sep { color: #e2e8f0; }
+
+/* Auto Click Tab */
+#ac_step_list {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 2px;
+}
+#ac_step_list::item {
+    padding: 6px 8px;
+    border-radius: 4px;
+    color: #334155;
+}
+#ac_step_list::item:hover { background-color: #f1f5f9; }
+#ac_step_list::item:selected { background-color: #3b82f6; color: #ffffff; }
+
+QPushButton#btn_outline {
+    background-color: transparent;
+    border: 1px solid #3b82f6;
+    color: #2563eb;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-weight: 500;
+}
+QPushButton#btn_outline:hover {
+    background-color: #eff6ff;
+    color: #1d4ed8;
+    border-color: #1d4ed8;
+}
+QPushButton#btn_outline:pressed { background-color: #dbeafe; }
 #feature_desc { color: #64748b; font-size: 13px; }
 #window_label[status="connected"] { color: #059669; font-weight: 600; }
 #status_label[type="success"] { color: #059669; }
