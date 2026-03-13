@@ -23,7 +23,7 @@ from ui.comps.preview_label import PreviewLabel
 from ui.comps.log_widget import LogWidget
 from ui.comps.line_number_area import LineNumberEditor
 from helpers.capture import CaptureWorker
-from helpers.window import find_game_window
+from helpers.window import find_game_window, list_all_windows
 from screenshot import WindowCapture
 
 from ui.tabs.feature_tab import FeatureTab
@@ -116,6 +116,22 @@ class ToolsWindow(QMainWindow):
         header_layout.addWidget(self._lang_combo)
 
         header_layout.addStretch()
+
+        # ── Process selector (visible when auto-connect is OFF) ──────
+        self._proc_combo = QComboBox()
+        self._proc_combo.setMinimumWidth(200)
+        self._proc_combo.setMaximumWidth(320)
+        self._proc_combo.setFixedHeight(top_h)
+        self._proc_combo.setToolTip("Chọn tiến trình để attach")
+        self._proc_combo.hide()  # hidden by default (auto-connect is ON)
+        header_layout.addWidget(self._proc_combo)
+
+        self._btn_refresh_proc = QPushButton("↻")
+        self._btn_refresh_proc.setFixedSize(top_h, top_h)
+        self._btn_refresh_proc.setToolTip("Làm mới danh sách tiến trình")
+        self._btn_refresh_proc.clicked.connect(self._refresh_proc_list)
+        self._btn_refresh_proc.hide()
+        header_layout.addWidget(self._btn_refresh_proc)
 
         # Connection Status Display
         self._conn_panel = QFrame()
@@ -327,11 +343,15 @@ class ToolsWindow(QMainWindow):
         if self._capture:
             self._do_detach()
             return
-        name = find_game_window()
+        # If auto-connect is off and user has selected a process, use that
+        if not self._chk_auto.isChecked() and self._proc_combo.currentText():
+            name = self._proc_combo.currentText()
+        else:
+            name = find_game_window()
         if name:
             self._do_attach(name)
         else:
-             self._log.append_err(t("error_no_window"))
+            self._log.append_err(t("error_no_window"))
 
     def _do_attach(self, name: str):
         try:
@@ -372,12 +392,31 @@ class ToolsWindow(QMainWindow):
             self._log.append_info(t("msg_disconnected"))
 
     def _on_auto_toggle(self, state):
-        if state == Qt.CheckState.Checked:
+        auto_on = (state == Qt.CheckState.Checked.value or state == Qt.CheckState.Checked)
+        if auto_on:
             self._auto_timer.start(1000)
+            self._proc_combo.hide()
+            self._btn_refresh_proc.hide()
             self._log.append_info(t("msg_auto_connect_on"))
         else:
             self._auto_timer.stop()
+            self._refresh_proc_list()
+            self._proc_combo.show()
+            self._btn_refresh_proc.show()
             self._log.append_info(t("msg_auto_connect_off"))
+
+    def _refresh_proc_list(self):
+        """Populate the process dropdown with all visible window titles."""
+        current = self._proc_combo.currentText()
+        titles = list_all_windows()
+        self._proc_combo.blockSignals(True)
+        self._proc_combo.clear()
+        self._proc_combo.addItems(titles)
+        # Restore previous selection if still present
+        idx = self._proc_combo.findText(current)
+        if idx >= 0:
+            self._proc_combo.setCurrentIndex(idx)
+        self._proc_combo.blockSignals(False)
 
     # ── Frame / Feature callbacks ─────────────────────────────────────────
 

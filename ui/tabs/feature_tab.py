@@ -3,12 +3,17 @@ import threading
 from pathlib import Path
 
 import numpy as np
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFrame, QHBoxLayout, QPushButton, QSizePolicy, QFileDialog
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QLabel, QFrame, QHBoxLayout, QPushButton,
+    QSizePolicy, QFileDialog, QCheckBox, QSlider, QLineEdit, QDoubleSpinBox,
+    QSpinBox,
+)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
+from PyQt6.QtGui import QIntValidator, QDoubleValidator
 
 from i18n import t
 from screenshot import WindowCapture
-from pps_engine import DSLEngine
+from pps_engine import DSLEngine, parse_bindings
 
 BASE_DIR = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent.parent.parent))
 DSL_DIR = BASE_DIR / "dsl"
@@ -28,7 +33,10 @@ class FeatureTab(QWidget):
         self._worker: threading.Thread | None = None
         self._running = False
         self._active = False
+        self._binding_widgets: dict[str, QWidget] = {}   # name -> widget
         self._build_ui(description)
+        # Populate bindings from the default DSL file
+        self._build_binding_controls()
 
     def on_activated(self):
         """Called when this tab is selected."""
@@ -56,6 +64,13 @@ class FeatureTab(QWidget):
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
         root.addWidget(sep)
+
+        # ── Binding controls (populated dynamically from DSL) ────────
+        self._bindings_frame = QWidget()
+        self._bindings_layout = QVBoxLayout(self._bindings_frame)
+        self._bindings_layout.setContentsMargins(0, 0, 0, 0)
+        self._bindings_layout.setSpacing(6)
+        root.addWidget(self._bindings_frame)
 
         # ── DSL file selector ────────────────────────────────────────
         file_row = QHBoxLayout()
@@ -95,6 +110,13 @@ class FeatureTab(QWidget):
         self._gear_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
         self._gear_idx = 0
 
+        # Debounced restart when bindings change
+        self._pending_restart = False
+        self._restart_timer = QTimer(self)
+        self._restart_timer.setSingleShot(True)
+        self._restart_timer.setInterval(400)
+        self._restart_timer.timeout.connect(self._do_restart)
+
         root.addStretch()
 
     def set_capture(self, cap: WindowCapture | None):
@@ -113,8 +135,150 @@ class FeatureTab(QWidget):
         if path:
             self._dsl_file = Path(path)
             self._file_lbl.setText(self._dsl_file.name)
+            self._build_binding_controls()
 
-    def _update_gear_animation(self):
+    # ------------------------------------------------------------------ #
+    # Dynamic binding UI                                                   #
+    # ------------------------------------------------------------------ #
+
+    def _build_binding_controls(self):
+        """Read the current DSL file, parse binding declarations, and render widgets."""
+        # Clear existing widgets
+        while self._bindings_layout.count():
+            item = self._bindings_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+            elif item.layout():
+                # clear nested layout
+                sub = item.layout()
+                while sub.count():
+                    si = sub.takeAt(0)
+                    if si.widget():
+                        si.widget().deleteLater()
+        self._binding_widgets.clear()
+
+        if not self._dsl_file.exists():
+            return
+
+        try:
+            script = self._dsl_file.read_text(encoding="utf-8")
+        except Exception:
+            return
+
+        bindings = parse_bindings(script)
+        if not bindings:
+            return
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        self._bindings_layout.addWidget(sep)
+
+        for b in bindings:
+            name: str = b["name"]
+            btype: str = b["type"]
+            default = b["default"]
+            row = QHBoxLayout()
+            row.setSpacing(8)
+
+            lbl = QLabel(name.replace("_", " ").capitalize())
+
+            if btype == "boolean":
+                w = QCheckBox()
+                w.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+                if default is not None:
+                    w.setChecked(default.lower() in ("true", "1", "yes"))
+                row.addWidget(w)
+                row.addWidget(lbl)
+                row.addStretch()
+                self._binding_widgets[name] = w
+                w.stateChanged.connect(self._schedule_restart)
+
+            elif btype == "slider":
+                lbl.setFixedWidth(120)
+                row.addWidget(lbl)
+                slider = QSlider(Qt.Orientation.Horizontal)
+                slider.setRange(1, 200)
+                slider.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+                slider.setMinimumWidth(120)
+                slider.setPageStep(5)
+                slider.setTickInterval(10)
+                slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+                spin = QSpinBox()
+                spin.setRange(1, 200)
+                spin.setMinimumWidth(56)
+                spin.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+                try:
+                    val = int(default) if default is not None else 10
+                except (TypeError, ValueError):
+                    val = 10
+                slider.setValue(val)
+                spin.setValue(val)
+                slider.valueChanged.connect(spin.setValue)
+                spin.valueChanged.connect(slider.setValue)
+                row.addWidget(slider)
+                row.addWidget(spin)
+                self._binding_widgets[name] = spin
+                spin.valueChanged.connect(self._schedule_restart)
+                container = QWidget()
+                container.setLayout(row)
+                self._bindings_layout.addWidget(container)
+                continue  # already inserted
+
+            elif btype == "number":
+                lbl.setFixedWidth(120)
+                row.addWidget(lbl)
+                w = QLineEdit()
+                w.setValidator(QDoubleValidator())
+                w.setMinimumWidth(90)
+                w.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+                w.setText(default if default is not None else "0")
+                w.editingFinished.connect(self._schedule_restart)
+                row.addWidget(w)
+
+            else:  # string
+                lbl.setFixedWidth(120)
+                row.addWidget(lbl)
+                w = QLineEdit()
+                w.setMinimumWidth(160)
+                w.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+                w.setText(default if default is not None else "")
+                w.editingFinished.connect(self._schedule_restart)
+                row.addWidget(w)
+
+            row.addStretch()
+            self._binding_widgets[name] = w
+            container = QWidget()
+            container.setLayout(row)
+            self._bindings_layout.addWidget(container)
+
+    def get_bindings(self) -> dict:
+        result = {}
+        for name, w in self._binding_widgets.items():
+            if isinstance(w, QCheckBox):
+                result[name] = 1.0 if w.isChecked() else 0.0
+            elif isinstance(w, (QSpinBox, QDoubleSpinBox)):
+                result[name] = w.value()
+            elif isinstance(w, QLineEdit):
+                text = w.text().strip()
+                # Try to cast to float; keep as string if that fails
+                try:
+                    result[name] = float(text)
+                except ValueError:
+                    result[name] = text
+        return result
+    def _schedule_restart(self, *_):
+        """Queue a debounced restart only if the script is currently running."""
+        if self._running:
+            self._restart_timer.start()  # resets the timer if already ticking
+
+    def _do_restart(self):
+        """Stop the engine and flag for restart; _on_stopped will call _start."""
+        if not self._running:
+            return
+        self._pending_restart = True
+        self._engine.request_stop()
+
+    def _update_gear_animation(self):        
         char = self._gear_chars[self._gear_idx % len(self._gear_chars)]
         self._btn_stop.setText(f"{char} Đang chạy...")
         self._gear_idx += 1
@@ -151,7 +315,8 @@ class FeatureTab(QWidget):
         try:
             self._engine.execute(
                 script,
-                log_fn=lambda m: self.log_signal.emit(f"[{self.title}] {m}")
+                log_fn=lambda m: self.log_signal.emit(f"[{self.title}] {m}"),
+                bindings=self.get_bindings(),
             )
         except Exception as e:
             self.log_signal.emit(f"[{self.title}] ❌ Lỗi: {e}")
@@ -159,13 +324,15 @@ class FeatureTab(QWidget):
             self._running = False
             self._on_stopped()
 
-
     def _on_stopped(self):
         self._gear_timer.stop()
         self._btn_stop.hide()
         self._btn_stop.setText("■ Dừng lại")
         self._btn_start.show()
         self.stopped_signal.emit()
+        if self._pending_restart:
+            self._pending_restart = False
+            self._start()
 
     def _stop(self):
         self._engine.request_stop()
