@@ -6,6 +6,7 @@ Tự động tìm & attach cửa sổ Onmyoji khi khởi động.
 import sys
 import os
 import win32gui
+import numpy as np
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
@@ -14,12 +15,13 @@ from PyQt6.QtWidgets import (
     QSizePolicy, QComboBox, QTabBar, QScrollArea, QStackedWidget
 )
 from PyQt6.QtCore import Qt, QTimer
-from qt_material import apply_stylesheet, build_stylesheet
+
 
 from i18n import t, get_i18n
 from ui.comps.theme_toggle import ThemeToggle
 from ui.comps.preview_label import PreviewLabel
 from ui.comps.log_widget import LogWidget
+from ui.comps.line_number_area import LineNumberEditor
 from helpers.capture import CaptureWorker
 from helpers.window import find_game_window
 from screenshot import WindowCapture
@@ -436,24 +438,12 @@ class ToolsWindow(QMainWindow):
                 self._log.append_info(t("msg_theme_changed", theme=t("theme_dark") if checked else t("theme_light")) + " (Instant)")
             else:
                 # Fallback if cache missing
-                from qt_material import build_stylesheet
-                extra = {
-                    'danger': '#e22134',
-                    'warning': '#ffc107',
-                    'success': '#1db954',
-                    'font_family': 'Consolas',
-                    'density_scale': '-1',
-                }
-                qss = build_stylesheet(base_theme, extra=extra)
-                
-                # Merge with custom mode-specific QSS
                 try:
-                    mode_qss = (BASE_DIR / mode_qss_file).read_text(encoding="utf-8")
-                    qss += "\n" + mode_qss
-                except:
-                    pass
-                    
-                app.setStyleSheet(qss)
+                    qss = (BASE_DIR / mode_qss_file).read_text(encoding="utf-8")
+                    app.setStyleSheet(qss)
+                except Exception as inner_e:
+                    self._log.append_err(f"Error loading {mode_qss_file}: {inner_e}")
+                
                 self._log.append_info(t("msg_theme_changed", theme=t("theme_dark") if checked else t("theme_light")))
             
             # Propagate theme change to all LineNumberEditor instances
@@ -477,34 +467,26 @@ class ToolsWindow(QMainWindow):
 
 
 # ---------------------------------------------------------------------------
-# Entry point – qt-material theme
+# Entry point
 # ---------------------------------------------------------------------------
 
 def main():
     app = QApplication(sys.argv)
     
-    # Global theme config (consistent across toggles)
-    extra = {
-        'danger': '#e22134',
-        'warning': '#ffc107',
-        'success': '#1db954',
-        'font_family': 'Consolas',
-        'density_scale': '-1',
-    }
-    
     # Pre-cache stylesheets to avoid lag during switching
     try:
-        def get_merged_qss(base_xml, mode_qss_name):
-            base_qss = build_stylesheet(base_xml, extra=extra)
+        def get_qss(mode_qss_name):
             try:
-                mode_qss = (BASE_DIR / mode_qss_name).read_text(encoding="utf-8")
-                return base_qss + "\n" + mode_qss
+                qss_path = BASE_DIR / mode_qss_name
+                if qss_path.exists():
+                    return qss_path.read_text(encoding="utf-8")
+                return ""
             except:
-                return base_qss
+                return ""
 
         app._theme_cache = {
-            'dark_styles.qss': get_merged_qss('dark_teal.xml', 'dark_styles.qss'),
-            'light_styles.qss': get_merged_qss('light_teal.xml', 'light_styles.qss'),
+            'dark_styles.qss': get_qss('dark_styles.qss'),
+            'light_styles.qss': get_qss('light_styles.qss'),
         }
     except Exception as e:
         print(f"[THEME CACHE ERROR] {e}")
@@ -512,11 +494,9 @@ def main():
 
     # Apply the initial theme
     try:
-        if 'dark_styles.qss' in app._theme_cache:
-            app.setStyleSheet(app._theme_cache['dark_styles.qss'])
-        else:
-            # Absolute fallback
-            apply_stylesheet(app, theme='dark_teal.xml', extra=extra)
+        dark_qss = app._theme_cache.get('dark_styles.qss')
+        if dark_qss:
+            app.setStyleSheet(dark_qss)
     except Exception as e:
         print(f"[THEME ERROR] {e}")
 
