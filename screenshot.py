@@ -20,14 +20,11 @@ class WindowCapture:
         self.update_window_rect()
 
     def update_window_rect(self):
-
         rect = win32gui.GetClientRect(self.hwnd)
-
-        self.w = rect[2]
-        self.h = rect[3]
+        self.w = max(1, rect[2])
+        self.h = max(1, rect[3])
 
         client_pos = win32gui.ClientToScreen(self.hwnd, (0, 0))
-
         self.x = client_pos[0]
         self.y = client_pos[1]
 
@@ -35,27 +32,32 @@ class WindowCapture:
         self.update_window_rect()
 
         hwndDC = win32gui.GetWindowDC(self.hwnd)
+        if not hwndDC:
+            return None
+        
         mfcDC = win32ui.CreateDCFromHandle(hwndDC)
         saveDC = mfcDC.CreateCompatibleDC()
 
         bitmap = win32ui.CreateBitmap()
-        bitmap.CreateCompatibleBitmap(mfcDC, self.w, self.h)
+        try:
+            bitmap.CreateCompatibleBitmap(mfcDC, self.w, self.h)
+            saveDC.SelectObject(bitmap)
 
-        saveDC.SelectObject(bitmap)
+            result = PrintWindow(
+                self.hwnd,
+                saveDC.GetSafeHdc(),
+                3
+            )
 
-        result = PrintWindow(
-            self.hwnd,
-            saveDC.GetSafeHdc(),
-            3
-        )
+            bmpinfo = bitmap.GetInfo()
+            bmpstr = bitmap.GetBitmapBits(True)
 
-        bmpinfo = bitmap.GetInfo()
-        bmpstr = bitmap.GetBitmapBits(True)
-
-        img = np.frombuffer(bmpstr, dtype=np.uint8)
-        img.shape = (bmpinfo['bmHeight'], bmpinfo['bmWidth'], 4)
-
-        img = img[..., :3]
+            img = np.frombuffer(bmpstr, dtype=np.uint8)
+            img.shape = (bmpinfo['bmHeight'], bmpinfo['bmWidth'], 4)
+            img = img[..., :3]
+        except Exception:
+            img = None
+            result = 0
 
         win32gui.DeleteObject(bitmap.GetHandle())
         saveDC.DeleteDC()

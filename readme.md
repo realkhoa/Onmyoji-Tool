@@ -94,4 +94,4 @@ Bot hoạt động dựa trên một ngôn ngữ kịch bản cực kỳ linh ho
 
 ## 📋 Yêu cầu hệ thống cơ bản
 *Tự cài qua `requirements.txt`*
-- `opencv-python`, `numpy`, `pywin32`, `PyQt6`, `psutil`, `keyboard`, `mss`, `qt-material`.
+- `opencv-python`, `numpy`, `pywin32`, `PyQt6`, `psutil`, `keyboard`, `mss`.
