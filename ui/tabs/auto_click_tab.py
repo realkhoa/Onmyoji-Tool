@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QPushButton,
     QGroupBox, QSpinBox, QDoubleSpinBox, QButtonGroup, QLineEdit,
     QListWidget, QListWidgetItem, QAbstractItemView, QInputDialog,
-    QFileDialog, QScrollArea, QComboBox
+    QFileDialog, QScrollArea, QComboBox, QSlider
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPixmap, QIcon, QPainter, QPen, QColor
@@ -76,6 +76,11 @@ class AutoClickTab(QWidget):
         desc.setWordWrap(True)
         desc.setObjectName("feature_desc")
         layout.addWidget(desc)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setObjectName("feature_sep")
+        layout.addWidget(sep)
 
         # 2. Point Config Group
         config_box = QGroupBox(t("grp_point_config"))
@@ -169,14 +174,20 @@ class AutoClickTab(QWidget):
         self._lbl_cond_thresh.setFixedWidth(80)
         self._lbl_cond_thresh.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         cond_th_row.addWidget(self._lbl_cond_thresh)
-        self._cond_thresh = QDoubleSpinBox()
-        self._cond_thresh.setRange(0.0, 1.0)
-        self._cond_thresh.setValue(0.8)
-        self._cond_thresh.setSingleStep(0.05)
-        self._cond_thresh.setFixedWidth(80)
+
+        self._cond_thresh = QSlider(Qt.Orientation.Horizontal)
+        self._cond_thresh.setRange(0, 100)
+        self._cond_thresh.setValue(80)
+        self._cond_thresh.setFixedWidth(160)
+        self._cond_thresh.valueChanged.connect(self._update_thresh_label)
         cond_th_row.addWidget(self._cond_thresh)
+
+        self._cond_thresh_lbl = QLabel("0.80")
+        self._cond_thresh_lbl.setFixedWidth(40)
+        cond_th_row.addWidget(self._cond_thresh_lbl)
         cond_th_row.addStretch()
         config_layout.addLayout(cond_th_row)
+        self._update_thresh_label(self._cond_thresh.value())
         
         self._btn_add = QPushButton(t("btn_add_point"))
         self._btn_add.setObjectName("btn_primary")
@@ -194,6 +205,7 @@ class AutoClickTab(QWidget):
         seq_layout = QVBoxLayout(seq_box)
         
         self._list_points = QListWidget()
+        self._list_points.setObjectName("ac_step_list")
         self._list_points.setFixedHeight(160)
         self._list_points.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self._list_points.itemDoubleClicked.connect(self._edit_point)
@@ -210,9 +222,11 @@ class AutoClickTab(QWidget):
 
         script_btns = QHBoxLayout()
         self._btn_save_script = QPushButton("💾 " + (t("btn_save_script") if t("btn_save_script") != "btn_save_script" else "Lưu kịch bản"))
+        self._btn_save_script.setObjectName("btn_outline")
         self._btn_save_script.clicked.connect(self._save_script)
         script_btns.addWidget(self._btn_save_script)
         self._btn_load_script = QPushButton("📂 " + (t("btn_load_script") if t("btn_load_script") != "btn_load_script" else "Tải kịch bản"))
+        self._btn_load_script.setObjectName("btn_outline")
         self._btn_load_script.clicked.connect(self._load_script)
         script_btns.addWidget(self._btn_load_script)
         seq_layout.addLayout(script_btns)
@@ -331,6 +345,7 @@ class AutoClickTab(QWidget):
         self._btn_pick_rect.setVisible(is_match)
         self._lbl_cond_thresh.setVisible(is_match)
         self._cond_thresh.setVisible(is_match)
+        self._cond_thresh_lbl.setVisible(is_match)
 
 
 
@@ -503,7 +518,7 @@ class AutoClickTab(QWidget):
         cond_img = self._cond_img.text().strip()
         if cond_img == "":
             cond_img = None
-        thresh = float(self._cond_thresh.value())
+        thresh = self._get_thresh()
         mode = 'match' if self._mode_combo.currentIndex() == 1 else 'coord'
         if mode == 'match':
             text = f"[{btn[0]}] match {cond_img} >= {thresh}" if cond_img else f"[{btn[0]}] match (no img)"
@@ -652,6 +667,8 @@ class AutoClickTab(QWidget):
 
         self._list_points.clear()
 
+        loaded_thresh = None
+
         # parse header for interval/repeat
         for line in text.splitlines():
             m = line.strip()
@@ -675,6 +692,8 @@ class AutoClickTab(QWidget):
                 mode = meta.get("mode", "coord")
                 img = meta.get("img", None) or None
                 thresh = float(meta.get("thresh", 0.8))
+                if loaded_thresh is None:
+                    loaded_thresh = thresh
                 px = int(meta.get("x", 0))
                 py = int(meta.get("y", 0))
 
@@ -695,6 +714,15 @@ class AutoClickTab(QWidget):
             except Exception:
                 continue
 
+        if loaded_thresh is not None:
+            self._cond_thresh.setValue(int(loaded_thresh * 100))
+            self._update_thresh_label(self._cond_thresh.value())
+
+    def _update_thresh_label(self, value: int):
+        self._cond_thresh_lbl.setText(f"{value/100:.2f}")
+
+    def _get_thresh(self) -> float:
+        return float(self._cond_thresh.value()) / 100.0
     def _get_sequence_points(self) -> list[tuple[int, int]]:
         pts = []
         for i in range(self._list_points.count()):
