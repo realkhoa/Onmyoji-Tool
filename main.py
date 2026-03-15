@@ -179,10 +179,18 @@ class ToolsWindow(QMainWindow):
         self._preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         pg_layout.addWidget(self._preview)
 
+        # Preview on/off toggle
+        preview_bottom = QHBoxLayout()
+        self._chk_preview = QCheckBox(t("preview_toggle"))
+        self._chk_preview.setChecked(True)
+        self._chk_preview.toggled.connect(self._preview.set_preview_enabled)
+        preview_bottom.addWidget(self._chk_preview)
+
         self._coord_lbl = QLabel(t("coord_placeholder"))
         self._coord_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
         self._preview.coord_changed.connect(lambda x, y: self._coord_lbl.setText(t("coord_format", x=x, y=y)))
-        pg_layout.addWidget(self._coord_lbl)
+        preview_bottom.addWidget(self._coord_lbl, 1)
+        pg_layout.addLayout(preview_bottom)
 
         left_layout.addWidget(preview_group, 1)
 
@@ -313,6 +321,7 @@ class ToolsWindow(QMainWindow):
             self._btn_manual_attach.setText(t("btn_connect"))
             
         self._chk_auto.setToolTip(t("auto_connect_tooltip"))
+        self._chk_preview.setText(t("preview_toggle"))
         
         # Update tabs
         self._tab_bar.setTabText(0, t("tab_guild_raid"))

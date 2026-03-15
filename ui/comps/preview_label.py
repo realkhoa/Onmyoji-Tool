@@ -19,6 +19,7 @@ class PreviewLabel(QLabel):
         self.setText(t("status_disconnected").upper())
         self._pixmap: QPixmap | None = None
         self._frame_w = self._frame_h = 0
+        self._preview_enabled = True
 
         self._coord_label = QLabel(self)
         self._coord_label.hide()
@@ -28,6 +29,15 @@ class PreviewLabel(QLabel):
         self._selecting_rect = False
         self._rect_start: QPoint | None = None
         self._rect_current: QPoint | None = None
+
+    def set_preview_enabled(self, enabled: bool):
+        self._preview_enabled = enabled
+        if not enabled:
+            self._pixmap = None
+            self.clear()
+            self.setText(t("preview_off"))
+        else:
+            self.setText("")
 
     def set_selection_mode(self, mode: bool):
         self._selection_mode = mode
@@ -39,6 +49,8 @@ class PreviewLabel(QLabel):
 
 
     def update_frame(self, frame: np.ndarray):
+        if not self._preview_enabled:
+            return
         if self.text():
             self.setText("")
         h, w = frame.shape[:2]

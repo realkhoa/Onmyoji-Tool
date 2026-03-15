@@ -75,5 +75,7 @@
   "desc_soul": "Mode Zone des Âmes, choisissez Hôte ou Invité.",
   "mode_host": "Hôte",
   "mode_invited": "Invité(e)",
-  "lbl_coming_soon": "{feature}\nEn cours de dev..."
+  "lbl_coming_soon": "{feature}\nEn cours de dev...",
+  "preview_toggle": "Aperçu",
+  "preview_off": "APERÇU DÉSACTIVÉ"
 }

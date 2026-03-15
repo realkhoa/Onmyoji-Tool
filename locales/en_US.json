@@ -75,5 +75,7 @@
   "desc_soul": "Soul Zone farm mode, select Host or Invited to use corresponding script.",
   "mode_host": "Host",
   "mode_invited": "Invited",
-  "lbl_coming_soon": "{feature}\nIn development..."
+  "lbl_coming_soon": "{feature}\nIn development...",
+  "preview_toggle": "Show Preview",
+  "preview_off": "PREVIEW OFF"
 }
