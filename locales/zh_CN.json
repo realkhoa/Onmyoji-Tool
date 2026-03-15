@@ -75,5 +75,7 @@
   "desc_soul": "御魂副本模式，选择队长或队员以使用相应脚本。",
   "mode_host": "队长",
   "mode_invited": "队员",
-  "lbl_coming_soon": "{feature}\n开发中..."
+  "lbl_coming_soon": "{feature}\n开发中...",
+  "preview_toggle": "显示预览",
+  "preview_off": "预览已关闭"
 }
