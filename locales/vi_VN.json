@@ -75,5 +75,7 @@
   "desc_soul": "Chế độ treo rắn, chọn chủ phòng hoặc được mời để dùng script phù hợp.",
   "mode_host": "Chủ phòng",
   "mode_invited": "Được mời",
-  "lbl_coming_soon": "{feature}\nĐang phát triển..."
+  "lbl_coming_soon": "{feature}\nĐang phát triển...",
+  "preview_toggle": "Hiển thị xem trước",
+  "preview_off": "TẮT XEM TRƯỚC"
 }

@@ -31,12 +31,6 @@ QMainWindow, QDialog {
     border-top-right-radius: 12px;
 }
 
-#conn_panel {
-    background-color: #ffffff; /* White */
-    border: 1px solid #e2e8f0; /* Slate 200 */
-    border-radius: 8px;
-}
-
 QFrame {
     border: none;
 }
