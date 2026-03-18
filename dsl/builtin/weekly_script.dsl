@@ -4,8 +4,6 @@ wait_and_click 'shop_pack_daily_icon.png'
 wait_and_click 'shop_pack_daily_lot_icon.png'
 wait(1)
 
-
-
 find_and_click 'shop_back_button.png'
 wait(1)
 find_and_click 'shop_back_button.png'
@@ -19,3 +17,6 @@ wait_and_click 'collection_close_icon.png'
 wait_and_click 'collection_back_icon.png'
 wait_and_click 'collection_close_icon.png'
 find_and_click 'collection_back_button.png'
+
+# Run once then stop — this script is a one-shot sequence, not a continuous loop.
+break

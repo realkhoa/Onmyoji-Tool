@@ -7,7 +7,7 @@ class LogWidget(QTextEdit):
         super().__init__(parent)
         self.setObjectName("log_widget")
         self.setReadOnly(True)
-        self.setMaximumHeight(140)
+        self.setMinimumHeight(60)
 
     def append_log(self, msg: str, color: str = "#b3b3b3"):
         ts = time.strftime("%H:%M:%S")

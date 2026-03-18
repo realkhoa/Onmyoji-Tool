@@ -1,6 +1,6 @@
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal, QMutex, QMutexLocker
-from screenshot import WindowCapture
+from pps_engine.screenshot import WindowCapture
 
 class CaptureWorker(QThread):
     frame_ready = pyqtSignal(np.ndarray)

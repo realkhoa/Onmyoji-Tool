@@ -3,11 +3,27 @@ ui_tools.py – Giao diện thân thiện, mỗi tab là 1 tính năng game.
 Tự động tìm & attach cửa sổ Onmyoji khi khởi động.
 """
 
+import logging
 import sys
 import os
 import win32gui
 import numpy as np
 from pathlib import Path
+
+# ── Logging setup ────────────────────────────────────────────────────────────
+def _configure_logging():
+    log_dir = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
+    log_file = log_dir / "onmyoji_tool.log"
+    logging.basicConfig(
+        level=logging.WARNING,
+        format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+        handlers=[
+            logging.FileHandler(log_file, encoding="utf-8"),
+            logging.StreamHandler(sys.stderr),
+        ],
+    )
+
+_configure_logging()
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -17,14 +33,17 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer
 
 
+
 from i18n import t, get_i18n
-from ui.comps.theme_toggle import ThemeToggle
+from ui.style import APP_STYLE
 from ui.comps.preview_label import PreviewLabel
 from ui.comps.log_widget import LogWidget
 from ui.comps.line_number_area import LineNumberEditor
 from helpers.capture import CaptureWorker
 from helpers.window import find_game_window, list_all_windows
-from screenshot import WindowCapture
+from pps_engine.screenshot import WindowCapture
+
+from pps_engine import DSLEngine
 
 from ui.tabs.feature_tab import FeatureTab
 from ui.tabs.guild_realm_raid import GuildRealmRaidTab
@@ -37,6 +56,7 @@ from ui.tabs.soul_tab import SoulTab
 from ui.tabs.guide_tab import GuideTab
 from ui.tabs.others_tab import OthersTab
 from ui.tabs.coming_soon_tab import ComingSoonTab
+from ui.tabs.utils_tab import UtilsTab
 
 # Tối ưu hoá phần cứng cho QtWebEngine (sửa lỗi ui web bị lag, giật)
 # Xoá bỏ --single-process (dễ gây nghẽn) và bật các cờ ép buộc xài GPU cho hiệu năng tốt hơn.
@@ -64,13 +84,12 @@ class ToolsWindow(QMainWindow):
         self._capture_worker = CaptureWorker()
         self._capture_worker.frame_ready.connect(self._on_frame)
 
+        # Single shared DSL engine — all feature tabs run through this one instance
+        # so only one feature script executes at a time.
+        self._engine = DSLEngine()
+
         self._feature_tabs: list[FeatureTab] = []
-        self._current_theme = 'dark_teal.xml'
         self._init_ui()
-        # Set switch to match initial dark theme
-        self._theme_switch.blockSignals(True)
-        self._theme_switch.setChecked(True)
-        self._theme_switch.blockSignals(False)
 
         # Auto-attach timer
         self._auto_timer = QTimer(self)
@@ -102,12 +121,6 @@ class ToolsWindow(QMainWindow):
         # Consistent height for all header sub-elements
         top_h = 32
 
-        # Theme Toggle Switch
-        self._theme_switch = ThemeToggle()
-        self._theme_switch.setChecked(True)  # Default dark check (app starts dark)
-        self._theme_switch.toggled.connect(self._toggle_theme)
-        header_layout.addWidget(self._theme_switch)
-
         # Language Switcher
         self._lang_combo = QComboBox()
         self._lang_combo.addItems(["Tiếng Việt", "English", "Français", "中文"])
@@ -119,16 +132,14 @@ class ToolsWindow(QMainWindow):
 
         # ── Process selector (visible when auto-connect is OFF) ──────
         self._proc_combo = QComboBox()
-        self._proc_combo.setMinimumWidth(200)
-        self._proc_combo.setMaximumWidth(320)
-        self._proc_combo.setFixedHeight(top_h)
-        self._proc_combo.setToolTip("Chọn tiến trình để attach")
+        self._proc_combo.setToolTip(t("tooltip_proc_combo"))
         self._proc_combo.hide()  # hidden by default (auto-connect is ON)
         header_layout.addWidget(self._proc_combo)
 
         self._btn_refresh_proc = QPushButton("↻")
+        self._btn_refresh_proc.setObjectName("btn_icon")
         self._btn_refresh_proc.setFixedSize(top_h, top_h)
-        self._btn_refresh_proc.setToolTip("Làm mới danh sách tiến trình")
+        self._btn_refresh_proc.setToolTip(t("tooltip_refresh_proc"))
         self._btn_refresh_proc.clicked.connect(self._refresh_proc_list)
         self._btn_refresh_proc.hide()
         header_layout.addWidget(self._btn_refresh_proc)
@@ -156,8 +167,6 @@ class ToolsWindow(QMainWindow):
 
         # Connect/Disconnect Button
         self._btn_manual_attach = QPushButton(t("btn_connect"))
-        self._btn_manual_attach.setObjectName("btn_small")
-        self._btn_manual_attach.setFixedHeight(top_h)
         self._btn_manual_attach.clicked.connect(self._manual_attach)
         header_layout.addWidget(self._btn_manual_attach)
         
@@ -227,13 +236,22 @@ class ToolsWindow(QMainWindow):
 
         self._prev_tab_idx = -1
 
-        # Feature tabs
+        # ── Utils tab (first, runs independently) ────────────────────────
+        self._tab_utils = UtilsTab()
+        self._add_feature_tab(self._tab_utils, t("tab_utils"))
+
+        # ── Feature tabs (share the single DSLEngine) ─────────────────
         self._tab_guild = GuildRealmRaidTab()
+        self._tab_guild.set_engine(self._engine)
         self._add_feature_tab(self._tab_guild, "⚔ Kết giới Guild")
+
         self._tab_personal = PersonalRealmRaidTab()
+        self._tab_personal.set_engine(self._engine)
         self._add_feature_tab(self._tab_personal, "⚔ Kết giới Cá nhân")
+
+        # AutoClickTab manages its own engine for image matching internally;
+        # it does NOT share the main feature engine.
         self._tab_autoclick = AutoClickTab()
-        # connect preview double-click to autoclick picker
         try:
             self._preview.coord_selected.connect(self._tab_autoclick.on_preview_selected)
             self._tab_autoclick.request_selection_signal.connect(lambda: self._preview.set_selection_mode(True))
@@ -242,37 +260,41 @@ class ToolsWindow(QMainWindow):
             pass
         self._add_feature_tab(self._tab_autoclick, "🖱 Auto Click")
 
-        # treo rắn tab with host/invited selector
         self._tab_soul = SoulTab()
+        self._tab_soul.set_engine(self._engine)
         self._add_feature_tab(self._tab_soul, "🐍 Treo rắn")
 
-        # Ném đậu tab
         self._tab_demon_parade = AutoDemonParadeTab()
+        self._tab_demon_parade.set_engine(self._engine)
         self._add_feature_tab(self._tab_demon_parade, "🎯 Bách Quỷ Dạ Hành")
 
-        # Auto PvP tab
         self._tab_auto_duel = AutoDuelTab()
+        self._tab_auto_duel.set_engine(self._engine)
         self._add_feature_tab(self._tab_auto_duel, "⚔️ PVP")
 
         # Other tabs nested under 'Khác'
         self._tab_others = OthersTab()
         self._tab_console = ScriptConsoleTab()
+        self._tab_console.set_engine(self._engine)
         self._tab_others.add_sub_tab(self._tab_console, "💻 CLI")
         self._tab_guide = GuideTab()
         self._tab_others.add_sub_tab(self._tab_guide, "📚 Guide")
         self._coming_soon = ComingSoonTab("Tính năng khác")
         self._tab_others.add_sub_tab(self._coming_soon, "🚧 Placeholder")
-        
-        # Add the 'Others' container to main bar
-        # Connect signals for sub-tabs to ToolsWindow logs/lock logic
+
         self._add_feature_tab(self._tab_console, "💻 CLI", nested=True)
         self._add_feature_tab(self._tab_guide, "📚 Guide", nested=True)
         self._add_feature_tab(self._tab_others, "➕ Khác")
 
+        # Pass the Utils quest-action getter to every feature tab
+        for tab in self._feature_tabs:
+            if hasattr(tab, "set_quest_action_fn"):
+                tab.set_quest_action_fn(self._tab_utils.quest_action)
+
         splitter.addWidget(right)
         splitter.setStretchFactor(0, 2)
         splitter.setStretchFactor(1, 4)
-        root.addWidget(splitter, 1)
+        root.addWidget(splitter, 5)
 
         # ── Log ──────────────────────────────────────────────────────
         log_box = QGroupBox(t("group_activity_log"))
@@ -283,13 +305,12 @@ class ToolsWindow(QMainWindow):
 
         log_btn_row = QHBoxLayout()
         btn_clear = QPushButton(t("btn_clear_log"))
-        btn_clear.setFixedWidth(90)
         btn_clear.clicked.connect(self._log.clear)
         log_btn_row.addWidget(btn_clear)
         log_btn_row.addStretch()
         log_layout.addLayout(log_btn_row)
 
-        root.addWidget(log_box)
+        root.addWidget(log_box, 1)
 
     def _add_feature_tab(self, tab: QWidget, label: str, nested: bool = False):
         if hasattr(tab, "log_signal"):
@@ -312,7 +333,10 @@ class ToolsWindow(QMainWindow):
         langs = ["vi_VN", "en_US", "fr_FR", "zh_CN"]
         get_i18n().load_language(langs[idx])
 
-    def update_texts(self, lang):
+    def update_texts(self, lang=None):
+        self.setWindowTitle(t("app_title"))
+        self._proc_combo.setToolTip(t("tooltip_proc_combo"))
+        self._btn_refresh_proc.setToolTip(t("tooltip_refresh_proc"))
         if self._capture:
             self._window_lbl.setText(t("status_connected", name=self._log_name if hasattr(self, '_log_name') else "Onmyoji"))
             self._btn_manual_attach.setText(t("btn_disconnect"))
@@ -323,16 +347,17 @@ class ToolsWindow(QMainWindow):
         self._chk_auto.setToolTip(t("auto_connect_tooltip"))
         self._chk_preview.setText(t("preview_toggle"))
         
-        # Update tabs
-        self._tab_bar.setTabText(0, t("tab_guild_raid"))
-        self._tab_bar.setTabText(1, t("tab_personal_raid"))
-        self._tab_bar.setTabText(2, t("tab_autoclick"))
-        self._tab_bar.setTabText(3, t("tab_soul"))
-        self._tab_bar.setTabText(4, t("tab_demon_parade"))
-        self._tab_bar.setTabText(5, t("tab_pvp"))
-        self._tab_bar.setTabText(6, t("tab_cli"))
-        self._tab_bar.setTabText(7, t("tab_guide"))
-        self._tab_bar.setTabText(8, t("tab_others"))
+        # Update tabs (index 0 = Utils, then features, then Others)
+        self._tab_bar.setTabText(0, t("tab_utils"))
+        self._tab_bar.setTabText(1, t("tab_guild_raid"))
+        self._tab_bar.setTabText(2, t("tab_personal_raid"))
+        self._tab_bar.setTabText(3, t("tab_autoclick"))
+        self._tab_bar.setTabText(4, t("tab_soul"))
+        self._tab_bar.setTabText(5, t("tab_demon_parade"))
+        self._tab_bar.setTabText(6, t("tab_pvp"))
+        self._tab_bar.setTabText(7, t("tab_cli"))
+        self._tab_bar.setTabText(8, t("tab_guide"))
+        self._tab_bar.setTabText(9, t("tab_others"))
 
     def _try_auto_attach(self):
         if not self._chk_auto.isChecked():
@@ -369,6 +394,9 @@ class ToolsWindow(QMainWindow):
             self._log.append_err(t("error_connection", error=e))
             return
         self._capture = cap
+        # Shared engine gets the capture directly; tabs also forward it for
+        # AutoClickTab (which has its own internal engine).
+        self._engine.set_capture(cap)
         for tab in self._feature_tabs:
             tab.set_capture(cap)
         if not self._capture_worker.isRunning():
@@ -388,6 +416,7 @@ class ToolsWindow(QMainWindow):
     def _do_detach(self, silent=False):
         self._capture_worker.set_capture(None)
         self._capture = None
+        self._engine.set_capture(None)
         for tab in self._feature_tabs:
             tab.set_capture(None)
         self._preview.clear()
@@ -462,45 +491,16 @@ class ToolsWindow(QMainWindow):
         # Khoá các tab khác ko cho bấm Start khi đang chạy
         sender = self.sender()
         for tab in self._feature_tabs:
-            if tab is not sender:
+            if tab is not sender and hasattr(tab, "_btn_start"):
                 tab._btn_start.setEnabled(False)
 
     def _on_feature_stopped(self):
         for tab in self._feature_tabs:
-            tab._btn_start.setEnabled(True)
+            if hasattr(tab, "_btn_start"):
+                tab._btn_start.setEnabled(True)
 
     def _on_log(self, msg: str):
         self._log.append_log(msg)
-
-    def _toggle_theme(self, checked: bool):
-        # checked = True -> Dark mode, False -> Light mode
-        # Use standard material themes as base
-        base_theme = 'dark_teal.xml' if checked else 'light_teal.xml'
-        mode_qss_file = 'dark_styles.qss' if checked else 'light_styles.qss'
-        self._current_theme = mode_qss_file
-        
-        app = QApplication.instance()
-        try:
-            if hasattr(app, '_theme_cache') and mode_qss_file in app._theme_cache:
-                app.setStyleSheet(app._theme_cache[mode_qss_file])
-                self._log.append_info(t("msg_theme_changed", theme=t("theme_dark") if checked else t("theme_light")) + " (Instant)")
-            else:
-                # Fallback if cache missing
-                try:
-                    qss = (BASE_DIR / mode_qss_file).read_text(encoding="utf-8")
-                    app.setStyleSheet(qss)
-                except Exception as inner_e:
-                    self._log.append_err(f"Error loading {mode_qss_file}: {inner_e}")
-                
-                self._log.append_info(t("msg_theme_changed", theme=t("theme_dark") if checked else t("theme_light")))
-            
-            # Propagate theme change to all LineNumberEditor instances
-            for tab in self._feature_tabs:
-                if hasattr(tab, "script_edit") and isinstance(tab.script_edit, LineNumberEditor):
-                    tab.script_edit.set_theme(checked)
-                    
-        except Exception as e:
-            self._log.append_err(t("error_theme_change", error=e))
 
     # _restore_window removed
 
@@ -521,33 +521,8 @@ class ToolsWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     
-    # Pre-cache stylesheets to avoid lag during switching
-    try:
-        def get_qss(mode_qss_name):
-            try:
-                qss_path = BASE_DIR / mode_qss_name
-                if qss_path.exists():
-                    return qss_path.read_text(encoding="utf-8")
-                return ""
-            except:
-                return ""
 
-        app._theme_cache = {
-            'dark_styles.qss': get_qss('dark_styles.qss'),
-            'light_styles.qss': get_qss('light_styles.qss'),
-        }
-    except Exception as e:
-        print(f"[THEME CACHE ERROR] {e}")
-        app._theme_cache = {}
-
-    # Apply the initial theme
-    try:
-        dark_qss = app._theme_cache.get('dark_styles.qss')
-        if dark_qss:
-            app.setStyleSheet(dark_qss)
-    except Exception as e:
-        print(f"[THEME ERROR] {e}")
-
+    app.setStyleSheet(APP_STYLE)
     win = ToolsWindow()
     win.show()
     sys.exit(app.exec())

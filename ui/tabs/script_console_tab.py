@@ -7,8 +7,8 @@ from i18n import t
 class ScriptConsoleTab(FeatureTab):
     def __init__(self, parent=None):
         super().__init__(
-            title="💻 CLI",
-            description=t("desc_cli"),
+            title_key="tab_cli",
+            desc_key="desc_cli",
             default_dsl="",  # start empty
             parent=parent,
         )
@@ -38,40 +38,48 @@ class ScriptConsoleTab(FeatureTab):
 
         self._worker_thread: threading.Thread | None = None
 
+    def update_texts(self, lang=None):
+        super().update_texts(lang)
+        self.btn_load.setText(t("btn_load"))
+        self.btn_save.setText(t("btn_save"))
+        self.script_edit.setPlaceholderText(t("placeholder_dsl"))
+
     def _start(self):
-        # override FeatureTab behaviour to read from editor
-        if self._running:
+        # Override FeatureTab._start() to read from the inline editor.
+        if self._running.is_set():
             return
-        if self._engine._capture is None:
-            self._set_status("⚠ Chưa attach cửa sổ game!", "#e22134")
-            self.log_signal.emit("[Console] Chưa attach cửa sổ game.")
+        if self._engine is None or self._engine._capture is None:
+            self._set_status(t("warning_no_game_attached"), "#e22134")
+            self.log_signal.emit("[Console] " + t("warning_no_game_attached"))
             return
         script = self.script_edit.toPlainText().strip()
         if not script:
             self.log_signal.emit("[Console] " + t("msg_script_empty"))
             return
-        self._running = True
+        self._running.set()
         self._engine.reset_stop()
         self._btn_start.hide()
         self._btn_stop.show()
-        self._set_status("⟳ Đang chạy...", "#1db954")
+        self._set_status(t("status_running"), "#1db954")
         self.started_signal.emit()
         self._worker_thread = threading.Thread(target=self._run, args=(script,), daemon=True)
         self._worker_thread.start()
         self.log_signal.emit("[Console] " + t("msg_running_script"))
 
     def _run(self, script: str):
+        # CLI runs the script exactly as written — no automatic loop wrapping.
         try:
             self._engine.execute(script, log_fn=lambda msg: self.log_signal.emit(f"[Console] {msg}"))
         except Exception as e:
             self.log_signal.emit(f"[Console] Lỗi: {e}")
         finally:
-            self._running = False
+            self._running.clear()
             self._on_stopped()
 
     def _stop(self):
-        self._engine.request_stop()
-        self._running = False
+        if self._engine is not None:
+            self._engine.request_stop()
+        self._running.clear()
         self._on_stopped()
 
     def _load(self):

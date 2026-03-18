@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l D:sourcecodeOnmyoji-Tool/ui/tabs/*.py)",
+      "Bash(find ./dsl -type f -name *.txt)",
+      "Bash(xargs wc:*)",
+      "Bash(wc -l /d/sourcecode/Onmyoji-Tool/**/*.py)",
+      "Bash(grep -r \"class.*Tab\" /d/sourcecode/Onmyoji-Tool/ui/tabs/*.py --include=\"*.py\")",
+      "Bash(find /d/sourcecode/Onmyoji-Tool -name \"*.py\" -exec wc -l {} +)",
+      "Bash(python:*)",
+      "Bash(find \"D:/sourcecode/Onmyoji-Tool\" -name \"*.pyc\" -delete)",
+      "Bash(find \"D:/sourcecode/Onmyoji-Tool\" -name \"__pycache__\" -type d -exec rm -rf {} +)",
+      "Bash(grep:*)"
+    ]
+  }
+}

@@ -1,3 +1,4 @@
+import logging
 import threading
 import time
 import random
@@ -7,7 +8,13 @@ from typing import Callable, Optional
 import numpy as np
 import re
 
-from screenshot import WindowCapture
+logger = logging.getLogger(__name__)
+
+# Maximum allowed timeout for wait_for/wait_and_click (seconds).
+# Scripts that pass timeout=0 (no limit) are capped at this value.
+_MAX_WAIT_TIMEOUT = 300.0
+
+from .screenshot import WindowCapture
 from .exceptions import DSLError, BreakLoop, ContinueLoop, ReturnFunc
 from .window import WindowMixin
 from .vision import VisionMixin
@@ -413,7 +420,8 @@ class DSLEngine(WindowMixin, VisionMixin):
         try:
             val = self._eval_expr(expr)
             self._variables[var] = float(val)
-        except Exception:
+        except Exception as exc:
+            logger.error("set '%s': expression error (%s), defaulting to 0", var, exc)
             self._variables[var] = 0.0
 
     def _handle_python_assignment(self, var: str, op: str, rhsStr: str):
@@ -422,7 +430,8 @@ class DSLEngine(WindowMixin, VisionMixin):
         else:
             try:
                 val = float(self._eval_expr(rhsStr))
-            except Exception:
+            except Exception as exc:
+                logger.error("Assignment rhs '%s': expression error (%s), defaulting to 0", rhsStr, exc)
                 val = 0.0
             
         if op == "=":
@@ -622,16 +631,19 @@ class DSLEngine(WindowMixin, VisionMixin):
         return images, timeout
 
     def _wait_for_images(self, image_names: list[str], timeout: float, log_fn) -> Optional[tuple[str, tuple[int, int]]]:
+        # A timeout of 0 means "no limit" in script syntax, but we cap it to
+        # avoid accidental infinite hangs in production scripts.
+        effective_timeout = timeout if timeout > 0 else _MAX_WAIT_TIMEOUT
         start = time.time()
         names_str = ", ".join(image_names)
         if timeout > 0:
             if log_fn: log_fn(f"Waiting for [{names_str}] (timeout {timeout}s)...")
         else:
-            if log_fn: log_fn(f"Waiting for [{names_str}] (no timeout)...")
+            if log_fn: log_fn(f"Waiting for [{names_str}] (no timeout, capped at {_MAX_WAIT_TIMEOUT}s)...")
         while True:
             if self._stop_event.is_set():
                 return None
-            if timeout > 0 and time.time() - start >= timeout:
+            if time.time() - start >= effective_timeout:
                 if log_fn: log_fn(f"Timeout waiting for [{names_str}]")
                 return None
             for img in image_names:

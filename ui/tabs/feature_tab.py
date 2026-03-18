@@ -1,116 +1,165 @@
+import logging
 import sys
 import threading
 from pathlib import Path
+from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 import numpy as np
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QFrame, QHBoxLayout, QPushButton,
     QSizePolicy, QFileDialog, QCheckBox, QSlider, QLineEdit, QDoubleSpinBox,
-    QSpinBox,
+    QSpinBox, QScrollArea,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QIntValidator, QDoubleValidator
 
-from i18n import t
-from screenshot import WindowCapture
+from i18n import t, get_i18n
+from pps_engine.screenshot import WindowCapture
 from pps_engine import DSLEngine, parse_bindings
 
 BASE_DIR = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent.parent.parent))
 DSL_DIR = BASE_DIR / "dsl"
 
 class FeatureTab(QWidget):
-    """Base class cho mỗi tab tính năng."""
+    """Base class for each feature tab.
+
+    The engine is *not* owned here — it is injected by the main window via
+    ``set_engine()``.  All feature tabs share one engine so only one feature
+    script runs at a time.  Each script is automatically wrapped in
+    ``loop forever {}`` so the feature body loops continuously without needing
+    an explicit outer loop in the DSL file.
+    """
     log_signal = pyqtSignal(str)
     status_message = pyqtSignal(str)
     started_signal = pyqtSignal()
     stopped_signal = pyqtSignal()
 
-    def __init__(self, title: str, description: str, default_dsl: str, parent=None):
+    def __init__(self, title_key: str, desc_key: str, default_dsl: str, parent=None):
         super().__init__(parent)
-        self.title = title
+        self._title_key = title_key
+        self._desc_key = desc_key
+        self.title = t(title_key)          # used in log messages
         self._dsl_file = BASE_DIR / default_dsl if default_dsl else Path()
-        self._engine = DSLEngine()
-        self._worker: threading.Thread | None = None
-        self._running = False
+        self._engine: Optional[DSLEngine] = None   # injected from ToolsWindow
+        self._worker: Optional[threading.Thread] = None
+        self._running = threading.Event()           # thread-safe start/stop flag
+        self._quest_action_fn: Optional[callable] = None  # set by ToolsWindow
         self._active = False
-        self._binding_widgets: dict[str, QWidget] = {}   # name -> widget
-        self._build_ui(description)
-        # Populate bindings from the default DSL file
+        self._binding_widgets: dict[str, QWidget] = {}
+        self._build_ui()
         self._build_binding_controls()
+        get_i18n().language_changed.connect(self.update_texts)
+
+    # ------------------------------------------------------------------ #
+    # Engine injection                                                      #
+    # ------------------------------------------------------------------ #
+
+    def set_engine(self, engine: DSLEngine):
+        """Called by ToolsWindow to inject the shared engine."""
+        self._engine = engine
+
+    def set_quest_action_fn(self, fn: callable):
+        """Called by ToolsWindow to inject a getter for the Utils quest setting."""
+        self._quest_action_fn = fn
+
+    # ------------------------------------------------------------------ #
+    # Tab lifecycle                                                         #
+    # ------------------------------------------------------------------ #
 
     def on_activated(self):
-        """Called when this tab is selected."""
         self._active = True
 
     def on_deactivated(self):
-        """Called when this tab is deselected."""
         self._active = False
 
-    def _build_ui(self, description: str):
-        root = QVBoxLayout(self)
+    def set_capture(self, cap: Optional[WindowCapture]):
+        if self._engine is not None:
+            self._engine.set_capture(cap)
+
+    def set_last_frame(self, frame: np.ndarray):
+        if self._engine is not None:
+            self._engine.set_last_frame(frame)
+
+    def is_running(self) -> bool:
+        return self._running.is_set()
+
+    # ------------------------------------------------------------------ #
+    # UI construction                                                       #
+    # ------------------------------------------------------------------ #
+
+    def _build_ui(self):
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        outer.addWidget(scroll)
+
+        _content = QWidget()
+        scroll.setWidget(_content)
+
+        root = QVBoxLayout(_content)
         root.setSpacing(10)
         root.setContentsMargins(12, 12, 12, 12)
 
-        # ── Header ──────────────────────────────────────────────────
-        header = QLabel(self.title)
-        header.setObjectName("feature_header")
-        root.addWidget(header)
+        self._header_lbl = QLabel(t(self._title_key))
+        self._header_lbl.setObjectName("feature_header")
+        root.addWidget(self._header_lbl)
 
-        desc_lbl = QLabel(description)
-        desc_lbl.setObjectName("feature_desc")
-        desc_lbl.setWordWrap(True)
-        root.addWidget(desc_lbl)
+        self._desc_lbl = QLabel(t(self._desc_key))
+        self._desc_lbl.setObjectName("feature_desc")
+        self._desc_lbl.setWordWrap(True)
+        root.addWidget(self._desc_lbl)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
         root.addWidget(sep)
 
-        # ── Binding controls (populated dynamically from DSL) ────────
+        # Binding controls (populated dynamically from DSL)
         self._bindings_frame = QWidget()
         self._bindings_layout = QVBoxLayout(self._bindings_frame)
         self._bindings_layout.setContentsMargins(0, 0, 0, 0)
         self._bindings_layout.setSpacing(6)
         root.addWidget(self._bindings_frame)
 
-        # ── DSL file selector ────────────────────────────────────────
+        # DSL file selector
         file_row = QHBoxLayout()
-        self._file_lbl = QLabel(self._dsl_file.name if self._dsl_file.exists() else "Chưa chọn file")
+        self._file_lbl = QLabel(self._dsl_file.name if self._dsl_file.exists() else t("lbl_no_file"))
         self._file_lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         file_row.addWidget(self._file_lbl)
 
         self._btn_browse = QPushButton(t("btn_browse_file"))
-        self._btn_browse.setFixedWidth(100)
         self._btn_browse.clicked.connect(self._browse_dsl)
         file_row.addWidget(self._btn_browse)
         root.addLayout(file_row)
 
-        # ── Start / Stop ─────────────────────────────────────────────
+        # Start / Stop
         btn_layout = QHBoxLayout()
         btn_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
         self._btn_start = QPushButton(t("btn_start"))
-        self._btn_start.setFixedHeight(34)
         self._btn_start.setObjectName("btn_success")
-        self._btn_start.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         self._btn_start.clicked.connect(self._start)
         btn_layout.addWidget(self._btn_start)
 
         self._btn_stop = QPushButton(t("btn_stop"))
-        self._btn_stop.setFixedHeight(34)
         self._btn_stop.setObjectName("btn_danger")
-        self._btn_stop.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         self._btn_stop.clicked.connect(self._stop)
         self._btn_stop.hide()
         btn_layout.addWidget(self._btn_stop)
         root.addLayout(btn_layout)
 
-        # Gear animation
+        # Spinner animation while running
         self._gear_timer = QTimer(self)
         self._gear_timer.timeout.connect(self._update_gear_animation)
         self._gear_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
         self._gear_idx = 0
 
-        # Debounced restart when bindings change
+        # Debounced restart when bindings change mid-run
         self._pending_restart = False
         self._restart_timer = QTimer(self)
         self._restart_timer.setSingleShot(True)
@@ -119,14 +168,19 @@ class FeatureTab(QWidget):
 
         root.addStretch()
 
-    def set_capture(self, cap: WindowCapture | None):
-        self._engine.set_capture(cap)
+    def update_texts(self, lang=None):
+        self.title = t(self._title_key)
+        self._header_lbl.setText(self.title)
+        self._desc_lbl.setText(t(self._desc_key))
+        self._btn_start.setText(t("btn_start"))
+        self._btn_stop.setText(t("btn_stop"))
+        self._btn_browse.setText(t("btn_browse_file"))
+        if not self._dsl_file.exists():
+            self._file_lbl.setText(t("lbl_no_file"))
 
-    def set_last_frame(self, frame: np.ndarray):
-        self._engine.set_last_frame(frame)
-
-    def is_running(self) -> bool:
-        return self._running
+    # ------------------------------------------------------------------ #
+    # Binding controls                                                      #
+    # ------------------------------------------------------------------ #
 
     def _browse_dsl(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -137,19 +191,12 @@ class FeatureTab(QWidget):
             self._file_lbl.setText(self._dsl_file.name)
             self._build_binding_controls()
 
-    # ------------------------------------------------------------------ #
-    # Dynamic binding UI                                                   #
-    # ------------------------------------------------------------------ #
-
     def _build_binding_controls(self):
-        """Read the current DSL file, parse binding declarations, and render widgets."""
-        # Clear existing widgets
         while self._bindings_layout.count():
             item = self._bindings_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
             elif item.layout():
-                # clear nested layout
                 sub = item.layout()
                 while sub.count():
                     si = sub.takeAt(0)
@@ -205,7 +252,6 @@ class FeatureTab(QWidget):
                 slider.setTickPosition(QSlider.TickPosition.TicksBelow)
                 spin = QSpinBox()
                 spin.setRange(1, 200)
-                spin.setMinimumWidth(56)
                 spin.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
                 try:
                     val = int(default) if default is not None else 10
@@ -222,14 +268,13 @@ class FeatureTab(QWidget):
                 container = QWidget()
                 container.setLayout(row)
                 self._bindings_layout.addWidget(container)
-                continue  # already inserted
+                continue
 
             elif btype == "number":
                 lbl.setFixedWidth(120)
                 row.addWidget(lbl)
                 w = QLineEdit()
                 w.setValidator(QDoubleValidator())
-                w.setMinimumWidth(90)
                 w.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
                 w.setText(default if default is not None else "0")
                 w.editingFinished.connect(self._schedule_restart)
@@ -239,7 +284,6 @@ class FeatureTab(QWidget):
                 lbl.setFixedWidth(120)
                 row.addWidget(lbl)
                 w = QLineEdit()
-                w.setMinimumWidth(160)
                 w.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
                 w.setText(default if default is not None else "")
                 w.editingFinished.connect(self._schedule_restart)
@@ -260,49 +304,56 @@ class FeatureTab(QWidget):
                 result[name] = w.value()
             elif isinstance(w, QLineEdit):
                 text = w.text().strip()
-                # Try to cast to float; keep as string if that fails
                 try:
                     result[name] = float(text)
                 except ValueError:
                     result[name] = text
         return result
+
+    # ------------------------------------------------------------------ #
+    # Restart on binding change                                            #
+    # ------------------------------------------------------------------ #
+
     def _schedule_restart(self, *_):
-        """Queue a debounced restart only if the script is currently running."""
-        if self._running:
-            self._restart_timer.start()  # resets the timer if already ticking
+        if self._running.is_set():
+            self._restart_timer.start()
 
     def _do_restart(self):
-        """Stop the engine and flag for restart; _on_stopped will call _start."""
-        if not self._running:
+        if not self._running.is_set():
             return
         self._pending_restart = True
-        self._engine.request_stop()
+        if self._engine is not None:
+            self._engine.request_stop()
 
-    def _update_gear_animation(self):        
+    # ------------------------------------------------------------------ #
+    # Run logic                                                            #
+    # ------------------------------------------------------------------ #
+
+    def _update_gear_animation(self):
         char = self._gear_chars[self._gear_idx % len(self._gear_chars)]
-        self._btn_stop.setText(f"{char} Đang chạy...")
+        label = t("status_running").split(None, 1)
+        suffix = label[1] if len(label) > 1 else label[0]
+        self._btn_stop.setText(f"{char} {suffix}")
         self._gear_idx += 1
 
     def _set_status(self, msg: str, color: str = "#1db954"):
-        # status text removed from UI, but we can log it
         if "⚠" in msg or "❌" in msg:
-             self.log_signal.emit(f"[{self.title}] {msg}")
+            self.log_signal.emit(f"[{self.title}] {msg}")
 
     def _start(self):
-        if self._running:
+        if self._running.is_set():
             return
-        # ensure we load a user-editable copy of builtin DSL templates
         if not self._dsl_file.exists():
-            self._set_status("⚠ Không tìm thấy file DSL!", "#e22134")
-            self.log_signal.emit(f"[{self.title}] File không tồn tại: {self._dsl_file}")
+            self._set_status(t("msg_file_not_found"), "#e22134")
+            self.log_signal.emit(f"[{self.title}] {t('msg_file_not_found')}: {self._dsl_file}")
             return
-        if self._engine._capture is None:
-            self._set_status("⚠ Chưa attach cửa sổ game!", "#e22134")
-            self.log_signal.emit(f"[{self.title}] Chưa attach cửa sổ game.")
+        if self._engine is None or self._engine._capture is None:
+            self._set_status(t("warning_no_game_attached"), "#e22134")
+            self.log_signal.emit(f"[{self.title}] {t('warning_no_game_attached')}")
             return
 
         script = self._dsl_file.read_text(encoding="utf-8")
-        self._running = True
+        self._running.set()
         self._engine.reset_stop()
         self._btn_start.hide()
         self._btn_stop.show()
@@ -312,22 +363,29 @@ class FeatureTab(QWidget):
         self._worker.start()
 
     def _run(self, script: str):
+        # Inject wanted-quest handler at the top of the body if Accept is chosen.
+        if self._quest_action_fn and self._quest_action_fn() == "Accept":
+            script = "find_and_click 'coop_wanted_quest_accept.png'\n" + script
+        # Wrap the feature body in the master loop so the tool continuously
+        # repeats the feature until the user clicks Stop.
+        wrapped = f"loop forever {{\n{script}\n}}"
         try:
             self._engine.execute(
-                script,
+                wrapped,
                 log_fn=lambda m: self.log_signal.emit(f"[{self.title}] {m}"),
                 bindings=self.get_bindings(),
             )
         except Exception as e:
+            logger.error("DSL execution error in tab '%s': %s", self.title, e)
             self.log_signal.emit(f"[{self.title}] ❌ Lỗi: {e}")
         finally:
-            self._running = False
+            self._running.clear()
             self._on_stopped()
 
     def _on_stopped(self):
         self._gear_timer.stop()
         self._btn_stop.hide()
-        self._btn_stop.setText("■ Dừng lại")
+        self._btn_stop.setText(t("btn_stop"))
         self._btn_start.show()
         self.stopped_signal.emit()
         if self._pending_restart:
@@ -335,7 +393,8 @@ class FeatureTab(QWidget):
             self._start()
 
     def _stop(self):
-        self._engine.request_stop()
-        self._running = False
+        if self._engine is not None:
+            self._engine.request_stop()
+        self._running.clear()
         self._on_stopped()
         self.log_signal.emit(f"[{self.title}] Đã dừng.")

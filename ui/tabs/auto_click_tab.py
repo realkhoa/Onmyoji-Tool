@@ -1,6 +1,9 @@
+import logging
 import threading
 import time
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 import win32api
 import win32con
@@ -17,9 +20,9 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPixmap, QIcon, QPainter, QPen, QColor
 
-from i18n import t
+from i18n import t, get_i18n
 from pps_engine import DSLEngine
-from screenshot import WindowCapture
+from pps_engine.screenshot import WindowCapture
 
 # Need local DSL_DIR for dialogs, importing from main or feature_tab
 import sys
@@ -38,12 +41,13 @@ class AutoClickTab(QWidget):
         super().__init__(parent)
         self._capture: WindowCapture | None = None
         self._engine = DSLEngine()
-        self._running = False
+        self._running = threading.Event()  # thread-safe start/stop flag
         self._stop_evt = threading.Event()
         self._worker: threading.Thread | None = None
         self._active = False
         self._build_ui()
         self._load_default()
+        get_i18n().language_changed.connect(self.update_texts)
 
     def on_activated(self):
         self._active = True
@@ -68,14 +72,14 @@ class AutoClickTab(QWidget):
         scroll.setWidget(container)
 
         # 1. Header
-        header_lbl = QLabel(t("tab_autoclick"))
-        header_lbl.setObjectName("feature_header")
-        layout.addWidget(header_lbl)
-        
-        desc = QLabel(t("lbl_autoclick_desc"))
-        desc.setWordWrap(True)
-        desc.setObjectName("feature_desc")
-        layout.addWidget(desc)
+        self._header_lbl = QLabel(t("tab_autoclick"))
+        self._header_lbl.setObjectName("feature_header")
+        layout.addWidget(self._header_lbl)
+
+        self._desc_lbl = QLabel(t("lbl_autoclick_desc"))
+        self._desc_lbl.setWordWrap(True)
+        self._desc_lbl.setObjectName("feature_desc")
+        layout.addWidget(self._desc_lbl)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
@@ -83,54 +87,48 @@ class AutoClickTab(QWidget):
         layout.addWidget(sep)
 
         # 2. Point Config Group
-        config_box = QGroupBox(t("grp_point_config"))
+        self._config_box = QGroupBox(t("grp_point_config"))
+        config_box = self._config_box
         config_layout = QVBoxLayout(config_box)
         config_layout.setSpacing(10)
+
+        # Mode selector (coordinate vs match-image)
+        mode_row = QHBoxLayout()
+        self._lbl_mode = QLabel(t("lbl_mode"))
+        mode_row.addWidget(self._lbl_mode)
+        self._mode_combo = QComboBox()
+        self._mode_combo.addItems([t("lbl_mode_coord"), t("lbl_mode_match")])
+        self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        mode_row.addWidget(self._mode_combo)
+        mode_row.addStretch()
+        config_layout.addLayout(mode_row)
         
         # Coords row
         coord_row = QHBoxLayout()
+        self._lbl_cord_t = QLabel(t("lbl_mode_coord"))
         self._spin_x = QSpinBox()
         self._spin_x.setRange(0, 10000)
         self._spin_x.setPrefix("X: ")
         self._spin_y = QSpinBox()
         self._spin_y.setRange(0, 10000)
         self._spin_y.setPrefix("Y: ")
+        coord_row.addWidget(self._lbl_cord_t)
         coord_row.addWidget(self._spin_x)
         coord_row.addWidget(self._spin_y)
         coord_row.addStretch()
         config_layout.addLayout(coord_row)
 
-        # Mode selector (coordinate vs match-image)
-        mode_row = QHBoxLayout()
-        # Mode label with i18n fallback
-        mode_label = t("lbl_mode")
-        if mode_label == "lbl_mode":
-            mode_label = "Mode:"
-        mode_row.addWidget(QLabel(mode_label))
-        self._mode_combo = QComboBox()
-        c_coord = t("lbl_mode_coord")
-        c_match = t("lbl_mode_match")
-        if c_coord == "lbl_mode_coord":
-            c_coord = "Coordinate"
-        if c_match == "lbl_mode_match":
-            c_match = "Match Image"
-        self._mode_combo.addItems([c_coord, c_match])
-        self._mode_combo.setFixedWidth(160)
-        self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
-        mode_row.addWidget(self._mode_combo)
-        mode_row.addStretch()
-        config_layout.addLayout(mode_row)
+        
 
         # Mouse button row
         mouse_row = QHBoxLayout()
-        mouse_row.addWidget(QLabel(t("lbl_mouse")))
+        self._lbl_mouse = QLabel(t("lbl_mouse"))
+        mouse_row.addWidget(self._lbl_mouse)
         self._btn_left = QPushButton(t("btn_left"))
         self._btn_left.setCheckable(True)
         self._btn_left.setChecked(True)
-        self._btn_left.setFixedWidth(80)
         self._btn_right = QPushButton(t("btn_right"))
         self._btn_right.setCheckable(True)
-        self._btn_right.setFixedWidth(80)
         
         self._btn_grp = QButtonGroup(self)
         self._btn_grp.addButton(self._btn_left)
@@ -153,14 +151,16 @@ class AutoClickTab(QWidget):
         self._cond_img.setPlaceholderText(t("placeholder_cond_img"))
         cond_img_row.addWidget(self._cond_img, 1)
         self._btn_browse_img = QPushButton()
+        self._btn_browse_img.setObjectName("btn_icon")
         self._btn_browse_img.setFixedSize(28, 24)
-        self._btn_browse_img.setToolTip("Browse image file")
+        self._btn_browse_img.setToolTip(t("tooltip_browse_img"))
         self._btn_browse_img.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_DirOpenIcon))
         self._btn_browse_img.clicked.connect(self._browse_image)
         cond_img_row.addWidget(self._btn_browse_img)
         self._btn_pick_rect = QPushButton()
+        self._btn_pick_rect.setObjectName("btn_icon")
         self._btn_pick_rect.setFixedSize(28, 24)
-        self._btn_pick_rect.setToolTip("Capture region from preview")
+        self._btn_pick_rect.setToolTip(t("tooltip_capture_region"))
         self._btn_pick_rect.setIcon(self._make_marquee_icon(16))
         self._btn_pick_rect.clicked.connect(self._on_pick_rect_clicked)
         cond_img_row.addWidget(self._btn_pick_rect)
@@ -191,7 +191,6 @@ class AutoClickTab(QWidget):
         
         self._btn_add = QPushButton(t("btn_add_point"))
         self._btn_add.setObjectName("btn_primary")
-        self._btn_add.setFixedHeight(32)
         self._btn_add.clicked.connect(self._add_point)
         config_layout.addWidget(self._btn_add)
         
@@ -201,7 +200,8 @@ class AutoClickTab(QWidget):
         self._on_mode_changed(self._mode_combo.currentIndex())
 
         # 3. Sequence Group
-        seq_box = QGroupBox(t("grp_sequence"))
+        self._seq_box = QGroupBox(t("grp_sequence"))
+        seq_box = self._seq_box
         seq_layout = QVBoxLayout(seq_box)
         
         self._list_points = QListWidget()
@@ -221,11 +221,11 @@ class AutoClickTab(QWidget):
         seq_layout.addLayout(list_btns)
 
         script_btns = QHBoxLayout()
-        self._btn_save_script = QPushButton("💾 " + (t("btn_save_script") if t("btn_save_script") != "btn_save_script" else "Lưu kịch bản"))
+        self._btn_save_script = QPushButton("💾 " + t("btn_save_script"))
         self._btn_save_script.setObjectName("btn_outline")
         self._btn_save_script.clicked.connect(self._save_script)
         script_btns.addWidget(self._btn_save_script)
-        self._btn_load_script = QPushButton("📂 " + (t("btn_load_script") if t("btn_load_script") != "btn_load_script" else "Tải kịch bản"))
+        self._btn_load_script = QPushButton("📂 " + t("btn_load_script"))
         self._btn_load_script.setObjectName("btn_outline")
         self._btn_load_script.clicked.connect(self._load_script)
         script_btns.addWidget(self._btn_load_script)
@@ -234,20 +234,21 @@ class AutoClickTab(QWidget):
         layout.addWidget(seq_box)
 
         # 4. Global Options
-        opt_box = QGroupBox(t("grp_run_options"))
+        self._opt_box = QGroupBox(t("grp_run_options"))
+        opt_box = self._opt_box
         opt_layout = QHBoxLayout(opt_box)
-        opt_layout.addWidget(QLabel(t("lbl_interval")))
+        self._lbl_interval = QLabel(t("lbl_interval"))
+        opt_layout.addWidget(self._lbl_interval)
         self._spin_interval = QDoubleSpinBox()
         self._spin_interval.setRange(0.01, 3600.0)
         self._spin_interval.setValue(1.0)
-        self._spin_interval.setFixedWidth(80)
         opt_layout.addWidget(self._spin_interval)
         
         opt_layout.addSpacing(20)
-        opt_layout.addWidget(QLabel(t("lbl_repeat")))
+        self._lbl_repeat = QLabel(t("lbl_repeat"))
+        opt_layout.addWidget(self._lbl_repeat)
         self._spin_repeat = QSpinBox()
         self._spin_repeat.setRange(0, 1000000)
-        self._spin_repeat.setFixedWidth(100)
         opt_layout.addWidget(self._spin_repeat)
         opt_layout.addStretch()
         layout.addWidget(opt_box)
@@ -256,13 +257,11 @@ class AutoClickTab(QWidget):
         ctrl_layout = QVBoxLayout()
         self._btn_start = QPushButton(t("btn_start"))
         self._btn_start.setObjectName("btn_success")
-        self._btn_start.setFixedHeight(45)
         self._btn_start.clicked.connect(self._start)
         ctrl_layout.addWidget(self._btn_start)
 
         self._btn_stop = QPushButton(t("btn_stop"))
         self._btn_stop.setObjectName("btn_danger")
-        self._btn_stop.setFixedHeight(45)
         self._btn_stop.clicked.connect(self._stop)
         self._btn_stop.hide()
         ctrl_layout.addWidget(self._btn_stop)
@@ -286,12 +285,43 @@ class AutoClickTab(QWidget):
         self._engine.set_capture(cap)
 
     def is_running(self) -> bool:
-        return self._running
+        return self._running.is_set()
 
     def set_last_frame(self, frame: np.ndarray):
         self._engine.set_last_frame(frame)
 
-
+    def update_texts(self, lang=None):
+        self._header_lbl.setText(t("tab_autoclick"))
+        self._desc_lbl.setText(t("lbl_autoclick_desc"))
+        self._config_box.setTitle(t("grp_point_config"))
+        self._lbl_mode.setText(t("lbl_mode"))
+        self._lbl_cord_t.setText(t("lbl_mode_coord"))
+        cur_mode = self._mode_combo.currentIndex()
+        self._mode_combo.blockSignals(True)
+        self._mode_combo.setItemText(0, t("lbl_mode_coord"))
+        self._mode_combo.setItemText(1, t("lbl_mode_match"))
+        self._mode_combo.setCurrentIndex(cur_mode)
+        self._mode_combo.blockSignals(False)
+        self._lbl_mouse.setText(t("lbl_mouse"))
+        self._btn_left.setText(t("btn_left"))
+        self._btn_right.setText(t("btn_right"))
+        self._lbl_cond_img.setText(t("lbl_cond_img"))
+        self._cond_img.setPlaceholderText(t("placeholder_cond_img"))
+        self._btn_browse_img.setToolTip(t("tooltip_browse_img"))
+        self._btn_pick_rect.setToolTip(t("tooltip_capture_region"))
+        self._lbl_cond_thresh.setText(t("lbl_thresh"))
+        self._btn_add.setText(t("btn_add_point"))
+        self._seq_box.setTitle(t("grp_sequence"))
+        self._btn_remove.setText(t("btn_remove_point"))
+        self._btn_clear.setText(t("btn_clear_points"))
+        self._btn_save_script.setText("💾 " + t("btn_save_script"))
+        self._btn_load_script.setText("📂 " + t("btn_load_script"))
+        self._opt_box.setTitle(t("grp_run_options"))
+        self._lbl_interval.setText(t("lbl_interval"))
+        self._lbl_repeat.setText(t("lbl_repeat"))
+        self._btn_start.setText(t("btn_start"))
+        if not self._running.is_set():
+            self._btn_stop.setText(t("btn_stop"))
 
     def on_preview_selected(self, x: int, y: int):
         self._spin_x.setValue(x)
@@ -336,6 +366,7 @@ class AutoClickTab(QWidget):
         # show/hide controls based on selected mode
         is_match = (idx == 1)
         # coord controls
+        self._lbl_cord_t.setVisible(not is_match)
         self._spin_x.setVisible(not is_match)
         self._spin_y.setVisible(not is_match)
         # image controls
@@ -428,7 +459,7 @@ class AutoClickTab(QWidget):
         t_thread.start()
 
     def _start(self):
-        if self._running:
+        if self._running.is_set():
             return
         if self._capture is None:
             self.log_signal.emit(t("warning_no_game_attached"))
@@ -439,7 +470,7 @@ class AutoClickTab(QWidget):
         interval = float(self._spin_interval.value())
         repeat = int(self._spin_repeat.value())
 
-        self._running = True
+        self._running.set()
         self._stop_evt.clear()
         self._btn_start.hide()
         self._btn_stop.show()
@@ -489,7 +520,7 @@ class AutoClickTab(QWidget):
                         time.sleep(min(0.1, interval - slept))
                         slept += 0.1
                 cnt += 1
-            self._running = False
+            self._running.clear()
             self._on_stopped()
 
         self._worker = threading.Thread(target=runner, daemon=True)
@@ -506,7 +537,7 @@ class AutoClickTab(QWidget):
 
     def _stop(self):
         self._stop_evt.set()
-        self._running = False
+        self._running.clear()
         self._on_stopped()
         self.log_signal.emit(t("msg_autoclick_stopped"))
 
@@ -564,7 +595,7 @@ class AutoClickTab(QWidget):
             btn, px, py, img, thresh = data
             mode = 'match' if img else 'coord'
         choice, ok = QInputDialog.getItem(
-            self, t("title_choose_mouse"), "Button", ["Left", "Right"],
+            self, t("title_choose_mouse"), t("lbl_edit_btn"), ["Left", "Right"],
             0 if btn.lower().startswith("l") else 1, False
         )
         if ok and choice:
@@ -635,7 +666,7 @@ class AutoClickTab(QWidget):
         save_dir.mkdir(parents=True, exist_ok=True)
         default_path = str(save_dir / "default.atcl")
         path, _ = QFileDialog.getSaveFileName(
-            self, "Lưu kịch bản", default_path, "Auto Click Files (*.atcl);;All Files (*)"
+            self, t("title_save_script"), default_path, "Auto Click Files (*.atcl);;All Files (*)"
         )
         if not path:
             return
@@ -646,7 +677,7 @@ class AutoClickTab(QWidget):
         save_dir = DSL_DIR / "auto-click"
         save_dir.mkdir(parents=True, exist_ok=True)
         path, _ = QFileDialog.getOpenFileName(
-            self, "Tải kịch bản", str(save_dir), "Auto Click Files (*.atcl);;All Files (*)"
+            self, t("title_load_script"), str(save_dir), "Auto Click Files (*.atcl);;All Files (*)"
         )
         if not path:
             return
@@ -711,7 +742,8 @@ class AutoClickTab(QWidget):
                         if not pm.isNull():
                             item.setIcon(QIcon(pm.scaled(48, 48, Qt.AspectRatioMode.KeepAspectRatio)))
                 self._list_points.addItem(item)
-            except Exception:
+            except Exception as exc:
+                logger.warning("Could not parse step line '%s': %s", m, exc)
                 continue
 
         if loaded_thresh is not None:

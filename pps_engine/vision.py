@@ -1,128 +1,144 @@
+import logging
 from typing import Optional
 import time
 import numpy as np
 import cv2
 
+logger = logging.getLogger(__name__)
+
+# ── Constants ──────────────────────────────────────────────────────────────────
+# Scale candidates tried when the template doesn't fit at 1:1.
+_SCALE_MIN = 0.6
+_SCALE_MAX = 1.8
+_SCALE_STEPS = 13
+_SCALE_VALUES = np.linspace(_SCALE_MIN, _SCALE_MAX, _SCALE_STEPS)
+
+# Confidence at which we stop trying further scales (early-exit).
+_EARLY_EXIT_THRESHOLD = 0.95
+
+# Minimum template size after scaling (pixels); avoids degenerate matches.
+_MIN_TPL_DIM = 8
+
+# ROI vertical crop used by shiki-detection helpers (fraction of frame height).
+_ROI_TOP = 0.30
+_ROI_BOTTOM = 0.85
+
+
 class VisionMixin:
-    def _find_template(self, image_name: str, threshold: float = 0.8) -> Optional[tuple[int, int]]:
+    # ── Internal helpers ───────────────────────────────────────────────────────
+
+    def _load_template(self, image_name: str):
+        """Return (frame, template) or (None, None) if either is unavailable."""
         frame = self._get_frame()
         if frame is None:
-            return None
+            return None, None
         tpl_path = self._images_dir / image_name
         if not tpl_path.exists():
-            return None
+            return None, None
         template = cv2.imread(str(tpl_path))
         if template is None:
-            return None
+            return None, None
+        return frame, template
 
-        frame_h, frame_w = frame.shape[:2]
-        tpl_h, tpl_w = template.shape[:2]
+    @staticmethod
+    def _match_template_scaled(
+        haystack, needle, *, use_gray: bool, threshold: float
+    ) -> tuple[float, Optional[tuple[int, int]], float]:
+        """Try matching *needle* in *haystack* at scale 1.0 and then at scaled variants.
 
-        frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        tpl_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+        Returns ``(best_val, best_loc, best_scale)`` where *best_loc* is the
+        top-left corner of the best match (or ``None`` when nothing exceeded
+        *threshold*).
+        """
+        if use_gray:
+            haystack_g = cv2.cvtColor(haystack, cv2.COLOR_BGR2GRAY)
+            needle_g = cv2.cvtColor(needle, cv2.COLOR_BGR2GRAY)
+        else:
+            haystack_g = haystack
+            needle_g = needle
 
-        if tpl_w <= frame_w and tpl_h <= frame_h:
-            result = cv2.matchTemplate(frame_gray, tpl_gray, cv2.TM_CCOEFF_NORMED)
+        fh, fw = haystack_g.shape[:2]
+        th, tw = needle_g.shape[:2]
+
+        # Try the native (1:1) scale first — cheapest path.
+        if tw <= fw and th <= fh:
+            result = cv2.matchTemplate(haystack_g, needle_g, cv2.TM_CCOEFF_NORMED)
             _, max_val, _, max_loc = cv2.minMaxLoc(result)
+            if max_val >= _EARLY_EXIT_THRESHOLD:
+                return max_val, max_loc, 1.0
             if max_val >= threshold:
-                cx = max_loc[0] + tpl_w // 2
-                cy = max_loc[1] + tpl_h // 2
-                return (cx, cy)
+                # Keep as best candidate but still try scales to see if we can do better.
+                best_val, best_loc, best_scale = max_val, max_loc, 1.0
+            else:
+                best_val, best_loc, best_scale = -1.0, None, 1.0
+        else:
+            best_val, best_loc, best_scale = -1.0, None, 1.0
 
-        best_val = -1.0
-        best_loc = None
-        best_scale = 1.0
-
-        for scale in np.linspace(0.6, 1.8, 13):
+        # Try scaled variants.
+        for scale in _SCALE_VALUES:
             if abs(scale - 1.0) < 0.05:
                 continue
-            new_w = int(tpl_w * scale)
-            new_h = int(tpl_h * scale)
-            if new_w < 8 or new_h < 8:
+            new_w = int(tw * scale)
+            new_h = int(th * scale)
+            if new_w < _MIN_TPL_DIM or new_h < _MIN_TPL_DIM:
                 continue
-            if new_w > frame_w or new_h > frame_h:
+            if new_w > fw or new_h > fh:
                 continue
-            resized_tpl = cv2.resize(tpl_gray, (new_w, new_h), interpolation=cv2.INTER_AREA)
-            result = cv2.matchTemplate(frame_gray, resized_tpl, cv2.TM_CCOEFF_NORMED)
+            resized = cv2.resize(needle_g, (new_w, new_h), interpolation=cv2.INTER_AREA)
+            result = cv2.matchTemplate(haystack_g, resized, cv2.TM_CCOEFF_NORMED)
             _, max_val, _, max_loc = cv2.minMaxLoc(result)
             if max_val > best_val:
                 best_val = max_val
                 best_loc = max_loc
                 best_scale = scale
-                if max_val >= 0.95:
+                if max_val >= _EARLY_EXIT_THRESHOLD:
                     break
 
         if best_val >= threshold and best_loc is not None:
-            cx = best_loc[0] + int(tpl_w * best_scale) // 2
-            cy = best_loc[1] + int(tpl_h * best_scale) // 2
-            return (cx, cy)
-        return None
+            return best_val, best_loc, best_scale
+        return best_val, None, best_scale
+
+    # ── Public API ─────────────────────────────────────────────────────────────
+
+    def _find_template(self, image_name: str, threshold: float = 0.8) -> Optional[tuple[int, int]]:
+        frame, template = self._load_template(image_name)
+        if frame is None:
+            return None
+
+        th, tw = template.shape[:2]
+        _, best_loc, best_scale = self._match_template_scaled(
+            frame, template, use_gray=True, threshold=threshold
+        )
+        if best_loc is None:
+            return None
+        cx = best_loc[0] + int(tw * best_scale) // 2
+        cy = best_loc[1] + int(th * best_scale) // 2
+        return (cx, cy)
 
     def _find_template_exact(self, image_name: str, threshold: float = 0.8) -> Optional[tuple[int, int]]:
-        frame = self._get_frame()
+        """Like _find_template but matches colour pixels (no grayscale conversion)."""
+        frame, template = self._load_template(image_name)
         if frame is None:
             return None
-        tpl_path = self._images_dir / image_name
-        if not tpl_path.exists():
+
+        th, tw = template.shape[:2]
+        _, best_loc, best_scale = self._match_template_scaled(
+            frame, template, use_gray=False, threshold=threshold
+        )
+        if best_loc is None:
             return None
-        template = cv2.imread(str(tpl_path))
-        if template is None:
-            return None
-
-        frame_h, frame_w = frame.shape[:2]
-        tpl_h, tpl_w = template.shape[:2]
-
-        if tpl_w <= frame_w and tpl_h <= frame_h:
-            result = cv2.matchTemplate(frame, template, cv2.TM_CCOEFF_NORMED)
-            _, max_val, _, max_loc = cv2.minMaxLoc(result)
-            if max_val >= threshold:
-                cx = max_loc[0] + tpl_w // 2
-                cy = max_loc[1] + tpl_h // 2
-                return (cx, cy)
-
-        best_val = -1.0
-        best_loc = None
-        best_scale = 1.0
-
-        for scale in np.linspace(0.6, 1.8, 13):
-            if abs(scale - 1.0) < 0.05:
-                continue
-            new_w = int(tpl_w * scale)
-            new_h = int(tpl_h * scale)
-            if new_w < 8 or new_h < 8:
-                continue
-            if new_w > frame_w or new_h > frame_h:
-                continue
-            resized_tpl = cv2.resize(template, (new_w, new_h), interpolation=cv2.INTER_AREA)
-            result = cv2.matchTemplate(frame, resized_tpl, cv2.TM_CCOEFF_NORMED)
-            _, max_val, _, max_loc = cv2.minMaxLoc(result)
-            if max_val > best_val:
-                best_val = max_val
-                best_loc = max_loc
-                best_scale = scale
-                if max_val >= 0.95:
-                    break
-
-        if best_val >= threshold and best_loc is not None:
-            cx = best_loc[0] + int(tpl_w * best_scale) // 2
-            cy = best_loc[1] + int(tpl_h * best_scale) // 2
-            return (cx, cy)
-        return None
+        cx = best_loc[0] + int(tw * best_scale) // 2
+        cy = best_loc[1] + int(th * best_scale) // 2
+        return (cx, cy)
 
     def _count_template(self, image_name: str, threshold: float = 0.8) -> int:
-        frame = self._get_frame()
+        frame, template = self._load_template(image_name)
         if frame is None:
             return 0
-        tpl_path = self._images_dir / image_name
-        if not tpl_path.exists():
-            return 0
-        template = cv2.imread(str(tpl_path))
-        if template is None:
-            return 0
 
-        frame_h, frame_w = frame.shape[:2]
-        tpl_h, tpl_w = template.shape[:2]
-        if tpl_w > frame_w or tpl_h > frame_h:
+        fh, fw = frame.shape[:2]
+        th, tw = template.shape[:2]
+        if tw > fw or th > fh:
             return 0
 
         frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -135,8 +151,8 @@ class VisionMixin:
         if not points:
             return 0
 
-        min_dist_x = max(1, tpl_w // 2)
-        min_dist_y = max(1, tpl_h // 2)
+        min_dist_x = max(1, tw // 2)
+        min_dist_y = max(1, th // 2)
         kept = []
         for pt in points:
             for kpt in kept:
@@ -152,8 +168,8 @@ class VisionMixin:
             return None
 
         h, w = frame.shape[:2]
-        y1 = int(h * 0.30)
-        y2 = int(h * 0.85)
+        y1 = int(h * _ROI_TOP)
+        y2 = int(h * _ROI_BOTTOM)
         roi = frame[y1:y2, :]
 
         gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
@@ -175,8 +191,8 @@ class VisionMixin:
             return None
 
         h, w = frame.shape[:2]
-        y1 = int(h * 0.30)
-        y2 = int(h * 0.85)
+        y1 = int(h * _ROI_TOP)
+        y2 = int(h * _ROI_BOTTOM)
         roi = frame[y1:y2, :]
 
         small = cv2.resize(roi, (0, 0), fx=0.5, fy=0.5, interpolation=cv2.INTER_NEAREST)
