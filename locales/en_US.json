@@ -94,5 +94,17 @@
   "tooltip_capture_region": "Capture region from preview",
   "lbl_edit_btn": "Button",
   "tooltip_proc_combo": "Select process to attach",
-  "tooltip_refresh_proc": "Refresh process list"
+  "tooltip_refresh_proc": "Refresh process list",
+  "grp_steam": "💨 Steam",
+  "btn_kill_steam": "💀 Kill Steam",
+  "tooltip_kill_steam": "Terminate the Steam process (steam.exe)",
+  "msg_steam_killed": "Steam terminated successfully.",
+  "msg_steam_not_found": "No running Steam process found.",
+  "msg_steam_kill_error": "Error killing Steam: {error}",
+  "grp_win_rename": "🪟 Rename Window",
+  "lbl_new_title": "New title:",
+  "btn_rename_win": "✏ Rename",
+  "tooltip_rename_win": "Change the title of the attached game window",
+  "msg_renamed_ok": "Window renamed to: {title}",
+  "msg_rename_no_window": "No game window attached."
 }
