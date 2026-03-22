@@ -94,5 +94,17 @@
   "tooltip_capture_region": "Chụp vùng từ xem trước",
   "lbl_edit_btn": "Nút",
   "tooltip_proc_combo": "Chọn tiến trình để attach",
-  "tooltip_refresh_proc": "Làm mới danh sách tiến trình"
+  "tooltip_refresh_proc": "Làm mới danh sách tiến trình",
+  "grp_steam": "💨 Steam",
+  "btn_kill_steam": "💀 Kill Steam",
+  "tooltip_kill_steam": "Tắt tiến trình Steam (steam.exe)",
+  "msg_steam_killed": "Đã tắt Steam thành công.",
+  "msg_steam_not_found": "Không tìm thấy tiến trình Steam đang chạy.",
+  "msg_steam_kill_error": "Lỗi khi tắt Steam: {error}",
+  "grp_win_rename": "🪟 Đổi tên cửa sổ",
+  "lbl_new_title": "Tiêu đề mới:",
+  "btn_rename_win": "✏ Đặt tên",
+  "tooltip_rename_win": "Đổi tiêu đề cửa sổ game đang kết nối",
+  "msg_renamed_ok": "Đã đổi tên cửa sổ thành: {title}",
+  "msg_rename_no_window": "Chưa kết nối cửa sổ game nào."
 }

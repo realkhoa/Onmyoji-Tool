@@ -94,5 +94,17 @@
   "tooltip_capture_region": "Capturer une région depuis l'aperçu",
   "lbl_edit_btn": "Bouton",
   "tooltip_proc_combo": "Sélectionner le processus",
-  "tooltip_refresh_proc": "Rafraîchir la liste"
+  "tooltip_refresh_proc": "Rafraîchir la liste",
+  "grp_steam": "💨 Steam",
+  "btn_kill_steam": "💀 Kill Steam",
+  "tooltip_kill_steam": "Terminer le processus Steam (steam.exe)",
+  "msg_steam_killed": "Steam terminé avec succès.",
+  "msg_steam_not_found": "Aucun processus Steam en cours d'exécution.",
+  "msg_steam_kill_error": "Erreur lors de l'arrêt de Steam : {error}",
+  "grp_win_rename": "🪟 Renommer la fenêtre",
+  "lbl_new_title": "Nouveau titre :",
+  "btn_rename_win": "✏ Renommer",
+  "tooltip_rename_win": "Changer le titre de la fenêtre de jeu connectée",
+  "msg_renamed_ok": "Fenêtre renommée en : {title}",
+  "msg_rename_no_window": "Aucune fenêtre de jeu connectée."
 }

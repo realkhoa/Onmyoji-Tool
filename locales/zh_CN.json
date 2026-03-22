@@ -94,5 +94,17 @@
   "tooltip_capture_region": "从预览截取区域",
   "lbl_edit_btn": "按键",
   "tooltip_proc_combo": "选择要连接的进程",
-  "tooltip_refresh_proc": "刷新进程列表"
+  "tooltip_refresh_proc": "刷新进程列表",
+  "grp_steam": "💨 Steam",
+  "btn_kill_steam": "💀 关闭 Steam",
+  "tooltip_kill_steam": "终止 Steam 进程 (steam.exe)",
+  "msg_steam_killed": "已成功关闭 Steam。",
+  "msg_steam_not_found": "未找到正在运行的 Steam 进程。",
+  "msg_steam_kill_error": "关闭 Steam 时出错：{error}",
+  "grp_win_rename": "🪟 重命名窗口",
+  "lbl_new_title": "新标题：",
+  "btn_rename_win": "✏ 重命名",
+  "tooltip_rename_win": "更改已连接游戏窗口的标题",
+  "msg_renamed_ok": "窗口已重命名为：{title}",
+  "msg_rename_no_window": "未连接任何游戏窗口。"
 }
