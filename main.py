@@ -339,7 +339,8 @@ class ToolsWindow(QMainWindow):
 
     def _on_lang_changed(self, idx):
         langs = ["vi_VN", "en_US", "fr_FR", "zh_CN"]
-        get_i18n().load_language(langs[idx])
+        if 0 <= idx < len(langs):
+            get_i18n().load_language(langs[idx])
 
     def update_texts(self, lang=None):
         self.setWindowTitle(t("app_title"))
@@ -357,17 +358,18 @@ class ToolsWindow(QMainWindow):
         self._chk_auto.setText(t("auto_connect_tooltip"))
         self._chk_preview.setText(t("preview_toggle"))
         
-        # Update sidebar items
-        self._sidebar_list.item(0).setText(t("tab_utils"))
-        self._sidebar_list.item(1).setText(t("tab_guild_raid"))
-        self._sidebar_list.item(2).setText(t("tab_personal_raid"))
-        self._sidebar_list.item(3).setText(t("tab_autoclick"))
-        self._sidebar_list.item(4).setText(t("tab_soul"))
-        self._sidebar_list.item(5).setText(t("tab_demon_parade"))
-        self._sidebar_list.item(6).setText(t("tab_pvp"))
-        self._sidebar_list.item(7).setText(t("tab_cli"))
-        self._sidebar_list.item(8).setText(t("tab_guide"))
-        self._sidebar_list.item(9).setText(t("tab_others"))
+        # Update sidebar items with localized text and icons
+        if self._sidebar_list.count() >= 10:
+            self._sidebar_list.item(0).setText("🛠 " + t("tab_utils"))
+            self._sidebar_list.item(1).setText("⚔ " + t("tab_guild_raid"))
+            self._sidebar_list.item(2).setText("⚔ " + t("tab_personal_raid"))
+            self._sidebar_list.item(3).setText("🖱 " + t("tab_autoclick"))
+            self._sidebar_list.item(4).setText("🐍 " + t("tab_soul"))
+            self._sidebar_list.item(5).setText("🎯 " + t("tab_demon_parade"))
+            self._sidebar_list.item(6).setText("⚔️ " + t("tab_pvp"))
+            self._sidebar_list.item(7).setText("💻 " + t("tab_cli"))
+            self._sidebar_list.item(8).setText("📚 " + t("tab_guide"))
+            self._sidebar_list.item(9).setText("➕ " + t("tab_others"))
 
     def _try_auto_attach(self):
         if not self._chk_auto.isChecked():
