@@ -190,7 +190,10 @@ class ToolsWindow(QMainWindow):
         
         self._lang_combo = QComboBox()
         self._lang_combo.addItems(["Tiếng Việt", "English", "Français", "中文"])
-        self._lang_combo.setCurrentIndex(["vi_VN", "en_US", "fr_FR", "zh_CN"].index(get_i18n().current_lang))
+        try:
+            self._lang_combo.setCurrentIndex(["vi_VN", "en_US", "fr_FR", "zh_CN"].index(get_i18n().current_lang))
+        except ValueError:
+            self._lang_combo.setCurrentIndex(0)
         self._lang_combo.currentIndexChanged.connect(self._on_lang_changed)
         header_layout.addWidget(self._lang_combo)
         
@@ -360,16 +363,16 @@ class ToolsWindow(QMainWindow):
         
         # Update sidebar items with localized text and icons
         if self._sidebar_list.count() >= 10:
-            self._sidebar_list.item(0).setText("🛠 " + t("tab_utils"))
-            self._sidebar_list.item(1).setText("⚔ " + t("tab_guild_raid"))
-            self._sidebar_list.item(2).setText("⚔ " + t("tab_personal_raid"))
-            self._sidebar_list.item(3).setText("🖱 " + t("tab_autoclick"))
-            self._sidebar_list.item(4).setText("🐍 " + t("tab_soul"))
-            self._sidebar_list.item(5).setText("🎯 " + t("tab_demon_parade"))
-            self._sidebar_list.item(6).setText("⚔️ " + t("tab_pvp"))
-            self._sidebar_list.item(7).setText("💻 " + t("tab_cli"))
-            self._sidebar_list.item(8).setText("📚 " + t("tab_guide"))
-            self._sidebar_list.item(9).setText("➕ " + t("tab_others"))
+            self._sidebar_list.item(0).setText(t("tab_utils"))
+            self._sidebar_list.item(1).setText(t("tab_guild_raid"))
+            self._sidebar_list.item(2).setText(t("tab_personal_raid"))
+            self._sidebar_list.item(3).setText(t("tab_autoclick"))
+            self._sidebar_list.item(4).setText(t("tab_soul"))
+            self._sidebar_list.item(5).setText(t("tab_demon_parade"))
+            self._sidebar_list.item(6).setText(t("tab_pvp"))
+            self._sidebar_list.item(7).setText(t("tab_cli"))
+            self._sidebar_list.item(8).setText(t("tab_guide"))
+            self._sidebar_list.item(9).setText(t("tab_others"))
 
     def _try_auto_attach(self):
         if not self._chk_auto.isChecked():
@@ -492,12 +495,12 @@ class ToolsWindow(QMainWindow):
             return
         if self._prev_tab_idx != -1:
             prev_tab = self._stack.widget(self._prev_tab_idx)
-            if hasattr(prev_tab, "on_deactivated"):
+            if prev_tab and hasattr(prev_tab, "on_deactivated"):
                 prev_tab.on_deactivated()
         
         self._stack.setCurrentIndex(index)
         curr_tab = self._stack.widget(index)
-        if hasattr(curr_tab, "on_activated"):
+        if curr_tab and hasattr(curr_tab, "on_activated"):
             curr_tab.on_activated()
         
         self._prev_tab_idx = index
