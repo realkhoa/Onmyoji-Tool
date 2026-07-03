@@ -4,9 +4,21 @@ QMainWindow {
 }
 
 QWidget {
+    background-color: #0d0d0f;
     color: #f4f4f5;
     font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
     font-size: 13px;
+}
+
+QLabel, QCheckBox, QRadioButton {
+    background-color: transparent;
+}
+
+QTextEdit, QPlainTextEdit {
+    background-color: #121214;
+    border: 1px solid #27272a;
+    border-radius: 6px;
+    color: #f4f4f5;
 }
 
 QFrame#sidebar_frame {
@@ -118,7 +130,7 @@ QPushButton#btn_danger:pressed {
 }
 
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
-    background-color: #18181b;
+    background-color: #121214;
     border: 1px solid #27272a;
     border-radius: 6px;
     color: #e4e4e7;
@@ -175,6 +187,11 @@ QLabel#conn_status_led[status="connected"] {
 }
 QLabel#conn_status_led[status="disconnected"] {
     background-color: #71717a;
+}
+
+QScrollArea {
+    background-color: #0d0d0f;
+    border: none;
 }
 """
 
