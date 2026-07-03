@@ -28,8 +28,7 @@ _configure_logging()
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QGroupBox, QSplitter, QCheckBox, QFrame, 
-    QSizePolicy, QComboBox, QTabBar, QScrollArea, QStackedWidget,
-    QListWidget
+    QSizePolicy, QComboBox, QStackedWidget, QListWidget
 )
 from PyQt6.QtCore import Qt, QTimer
 
