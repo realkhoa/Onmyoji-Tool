@@ -161,5 +161,20 @@ QSplitter::handle {
 QSplitter::handle:horizontal {
     width: 2px;
 }
+
+QLabel#conn_status_led {
+    min-width: 8px;
+    min-height: 8px;
+    max-width: 8px;
+    max-height: 8px;
+    border-radius: 4px;
+    margin-right: 6px;
+}
+QLabel#conn_status_led[status="connected"] {
+    background-color: #22c55e;
+}
+QLabel#conn_status_led[status="disconnected"] {
+    background-color: #71717a;
+}
 """
 

@@ -28,7 +28,8 @@ _configure_logging()
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QGroupBox, QSplitter, QCheckBox, QFrame, 
-    QSizePolicy, QComboBox, QTabBar, QScrollArea, QStackedWidget
+    QSizePolicy, QComboBox, QTabBar, QScrollArea, QStackedWidget,
+    QListWidget
 )
 from PyQt6.QtCore import Qt, QTimer
 
@@ -54,7 +55,6 @@ from ui.tabs.script_console_tab import ScriptConsoleTab
 from ui.tabs.auto_click_tab import AutoClickTab
 from ui.tabs.soul_tab import SoulTab
 from ui.tabs.guide_tab import GuideTab
-from ui.tabs.others_tab import OthersTab
 from ui.tabs.coming_soon_tab import ComingSoonTab
 from ui.tabs.utils_tab import UtilsTab
 
@@ -107,35 +107,101 @@ class ToolsWindow(QMainWindow):
     def _init_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
-        root = QVBoxLayout(central)
-        root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(6)
+        root = QHBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        # ── Header Panel ──────────────────────────────────────────
-        self._header = QFrame()
-        self._header.setObjectName("header_panel")
-        header_layout = QHBoxLayout(self._header)
-        header_layout.setContentsMargins(32, 12, 32, 12)
-        header_layout.setSpacing(10)
+        # ── Sidebar Frame ──────────────────────────────────────────
+        self._sidebar_frame = QFrame()
+        self._sidebar_frame.setObjectName("sidebar_frame")
+        self._sidebar_frame.setFixedWidth(220)
         
-        # Consistent height for all header sub-elements
-        top_h = 32
+        sidebar_layout = QVBoxLayout(self._sidebar_frame)
+        sidebar_layout.setContentsMargins(12, 16, 12, 16)
+        sidebar_layout.setSpacing(12)
 
-        # Language Switcher
+        # Logo Area
+        self._logo_title = QLabel("ONMYOJI BOT")
+        self._logo_title.setObjectName("sidebar_title")
+        self._logo_sub = QLabel("Automation Engine")
+        self._logo_sub.setObjectName("sidebar_subtitle")
+        
+        logo_layout = QVBoxLayout()
+        logo_layout.setSpacing(2)
+        logo_layout.addWidget(self._logo_title)
+        logo_layout.addWidget(self._logo_sub)
+        sidebar_layout.addLayout(logo_layout)
+
+        # Navigation
+        self._sidebar_list = QListWidget()
+        self._sidebar_list.setObjectName("sidebar_list")
+        for _ in range(10):
+            self._sidebar_list.addItem("")
+        self._sidebar_list.currentRowChanged.connect(self._on_tab_changed)
+        sidebar_layout.addWidget(self._sidebar_list, 1)
+
+        # Connection Status Panel
+        self._conn_panel = QFrame()
+        self._conn_panel.setObjectName("conn_panel")
+        
+        conn_layout = QVBoxLayout(self._conn_panel)
+        conn_layout.setContentsMargins(0, 0, 0, 0)
+        conn_layout.setSpacing(8)
+        
+        led_lbl_layout = QHBoxLayout()
+        led_lbl_layout.setContentsMargins(0, 0, 0, 0)
+        led_lbl_layout.setSpacing(6)
+        
+        self._conn_led = QLabel()
+        self._conn_led.setObjectName("conn_status_led")
+        self._conn_led.setFixedSize(8, 8)
+        self._conn_led.setProperty("status", "disconnected")
+        
+        self._window_lbl = QLabel(t("status_disconnected"))
+        self._window_lbl.setObjectName("window_label")
+        
+        led_lbl_layout.addWidget(self._conn_led)
+        led_lbl_layout.addWidget(self._window_lbl)
+        led_lbl_layout.addStretch()
+        conn_layout.addLayout(led_lbl_layout)
+        
+        self._chk_auto = QCheckBox()
+        self._chk_auto.setToolTip(t("auto_connect_tooltip"))
+        self._chk_auto.setChecked(True)
+        self._chk_auto.stateChanged.connect(self._on_auto_toggle)
+        conn_layout.addWidget(self._chk_auto)
+        
+        self._btn_manual_attach = QPushButton(t("btn_connect"))
+        self._btn_manual_attach.clicked.connect(self._manual_attach)
+        conn_layout.addWidget(self._btn_manual_attach)
+        
+        sidebar_layout.addWidget(self._conn_panel)
+        
+        # ── Right Content Area ─────────────────────────────────────
+        right_content = QWidget()
+        right_layout = QVBoxLayout(right_content)
+        right_layout.setContentsMargins(12, 12, 12, 12)
+        right_layout.setSpacing(12)
+
+        # Top Header
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(8)
+        
         self._lang_combo = QComboBox()
         self._lang_combo.addItems(["Tiếng Việt", "English", "Français", "中文"])
         self._lang_combo.setCurrentIndex(["vi_VN", "en_US", "fr_FR", "zh_CN"].index(get_i18n().current_lang))
         self._lang_combo.currentIndexChanged.connect(self._on_lang_changed)
         header_layout.addWidget(self._lang_combo)
-
+        
         header_layout.addStretch()
-
-        # ── Process selector (visible when auto-connect is OFF) ──────
+        
         self._proc_combo = QComboBox()
         self._proc_combo.setToolTip(t("tooltip_proc_combo"))
-        self._proc_combo.hide()  # hidden by default (auto-connect is ON)
+        self._proc_combo.hide()
         header_layout.addWidget(self._proc_combo)
-
+        
+        top_h = 32
         self._btn_refresh_proc = QPushButton("↻")
         self._btn_refresh_proc.setObjectName("btn_icon")
         self._btn_refresh_proc.setFixedSize(top_h, top_h)
@@ -143,158 +209,47 @@ class ToolsWindow(QMainWindow):
         self._btn_refresh_proc.clicked.connect(self._refresh_proc_list)
         self._btn_refresh_proc.hide()
         header_layout.addWidget(self._btn_refresh_proc)
-
-        # Connection Status Display
-        self._conn_panel = QFrame()
-        self._conn_panel.setObjectName("conn_panel")
-        self._conn_panel.setFixedHeight(top_h)
-        cp_layout = QHBoxLayout(self._conn_panel)
-        cp_layout.setContentsMargins(10, 0, 10, 0)
-        cp_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self._window_lbl = QLabel(t("status_disconnected"))
-        self._window_lbl.setObjectName("window_label")
-        self._window_lbl.setProperty("status", "disconnected")
-        cp_layout.addWidget(self._window_lbl)
-
-        self._chk_auto = QCheckBox()
-        self._chk_auto.setToolTip(t("auto_connect_tooltip"))
-        self._chk_auto.setChecked(True)
-        self._chk_auto.stateChanged.connect(self._on_auto_toggle)
-        cp_layout.addWidget(self._chk_auto)
-
-        header_layout.addWidget(self._conn_panel)
-
-        # Connect/Disconnect Button
-        self._btn_manual_attach = QPushButton(t("btn_connect"))
-        self._btn_manual_attach.clicked.connect(self._manual_attach)
-        header_layout.addWidget(self._btn_manual_attach)
         
-        root.addWidget(self._header)
+        right_layout.addLayout(header_layout)
 
-
-        # ── Splitter: preview left | tabs right ──────────────────────
+        # ── Splitter ────────────────────────────────────────────────
         splitter = QSplitter(Qt.Orientation.Horizontal)
-
+        
         # Left: preview
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 4, 0)
         left_layout.setSpacing(6)
-
+        
         preview_group = QGroupBox(t("group_game_screen"))
         pg_layout = QVBoxLayout(preview_group)
         self._preview = PreviewLabel()
         self._preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         pg_layout.addWidget(self._preview)
-
+        
         # Preview on/off toggle
         preview_bottom = QHBoxLayout()
         self._chk_preview = QCheckBox(t("preview_toggle"))
         self._chk_preview.setChecked(True)
         self._chk_preview.toggled.connect(self._preview.set_preview_enabled)
         preview_bottom.addWidget(self._chk_preview)
-
+        
         self._coord_lbl = QLabel(t("coord_placeholder"))
         self._coord_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
         self._preview.coord_changed.connect(lambda x, y: self._coord_lbl.setText(t("coord_format", x=x, y=y)))
         preview_bottom.addWidget(self._coord_lbl, 1)
         pg_layout.addLayout(preview_bottom)
-
-        left_layout.addWidget(preview_group, 1)
-
-        # Resize button removed as requested
-
-        left.setMinimumWidth(260)
-        # allow preview pane to grow freely when window is resized
-        # left.setMaximumWidth(380)
-        splitter.addWidget(left)
-
-        right = QWidget()
-        right_layout = QVBoxLayout(right)
-        right_layout.setContentsMargins(4, 0, 0, 0)
-        right_layout.setSpacing(0)
-
-        # Scrollable Tab Bar container
-        self._tab_scroll = QScrollArea()
-        self._tab_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self._tab_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._tab_scroll.setWidgetResizable(True)
-        self._tab_scroll.setFixedHeight(45)
-
-        self._tab_bar = QTabBar()
-        self._tab_bar.setExpanding(False)
-        self._tab_bar.setDrawBase(False)
-        self._tab_bar.setUsesScrollButtons(False)
-        self._tab_bar.currentChanged.connect(self._on_tab_changed)
-        self._tab_scroll.setWidget(self._tab_bar)
         
-        right_layout.addWidget(self._tab_scroll)
-
+        left_layout.addWidget(preview_group, 1)
+        left.setMinimumWidth(260)
+        splitter.addWidget(left)
+        
         self._stack = QStackedWidget()
-        right_layout.addWidget(self._stack, 1)
-
-        self._prev_tab_idx = -1
-
-        # ── Utils tab (first, runs independently) ────────────────────────
-        self._tab_utils = UtilsTab()
-        self._add_feature_tab(self._tab_utils, t("tab_utils"))
-
-        # ── Feature tabs (share the single DSLEngine) ─────────────────
-        self._tab_guild = GuildRealmRaidTab()
-        self._tab_guild.set_engine(self._engine)
-        self._add_feature_tab(self._tab_guild, "⚔ Kết giới Guild")
-
-        self._tab_personal = PersonalRealmRaidTab()
-        self._tab_personal.set_engine(self._engine)
-        self._add_feature_tab(self._tab_personal, "⚔ Kết giới Cá nhân")
-
-        # AutoClickTab manages its own engine for image matching internally;
-        # it does NOT share the main feature engine.
-        self._tab_autoclick = AutoClickTab()
-        try:
-            self._preview.coord_selected.connect(self._tab_autoclick.on_preview_selected)
-            self._tab_autoclick.request_selection_signal.connect(lambda: self._preview.set_selection_mode(True))
-            self._preview.rect_selected.connect(self._tab_autoclick.on_rect_selected)
-        except Exception:
-            pass
-        self._add_feature_tab(self._tab_autoclick, "🖱 Auto Click")
-
-        self._tab_soul = SoulTab()
-        self._tab_soul.set_engine(self._engine)
-        self._add_feature_tab(self._tab_soul, "🐍 Treo rắn")
-
-        self._tab_demon_parade = AutoDemonParadeTab()
-        self._tab_demon_parade.set_engine(self._engine)
-        self._add_feature_tab(self._tab_demon_parade, "🎯 Bách Quỷ Dạ Hành")
-
-        self._tab_auto_duel = AutoDuelTab()
-        self._tab_auto_duel.set_engine(self._engine)
-        self._add_feature_tab(self._tab_auto_duel, "⚔️ PVP")
-
-        # Other tabs nested under 'Khác'
-        self._tab_others = OthersTab()
-        self._tab_console = ScriptConsoleTab()
-        self._tab_console.set_engine(self._engine)
-        self._tab_others.add_sub_tab(self._tab_console, "💻 CLI")
-        self._tab_guide = GuideTab()
-        self._tab_others.add_sub_tab(self._tab_guide, "📚 Guide")
-        self._coming_soon = ComingSoonTab("Tính năng khác")
-        self._tab_others.add_sub_tab(self._coming_soon, "🚧 Placeholder")
-
-        self._add_feature_tab(self._tab_console, "💻 CLI", nested=True)
-        self._add_feature_tab(self._tab_guide, "📚 Guide", nested=True)
-        self._add_feature_tab(self._tab_others, "➕ Khác")
-
-        # Pass the Utils quest-action getter to every feature tab
-        for tab in self._feature_tabs:
-            if hasattr(tab, "set_quest_action_fn"):
-                tab.set_quest_action_fn(self._tab_utils.quest_action)
-
-        splitter.addWidget(right)
+        splitter.addWidget(self._stack)
+        
         splitter.setStretchFactor(0, 2)
         splitter.setStretchFactor(1, 4)
-        root.addWidget(splitter, 5)
+        right_layout.addWidget(splitter, 5)
 
         # ── Log ──────────────────────────────────────────────────────
         log_box = QGroupBox(t("group_activity_log"))
@@ -302,17 +257,72 @@ class ToolsWindow(QMainWindow):
         log_layout.setContentsMargins(6, 4, 6, 4)
         self._log = LogWidget()
         log_layout.addWidget(self._log)
-
+        
         log_btn_row = QHBoxLayout()
         btn_clear = QPushButton(t("btn_clear_log"))
         btn_clear.clicked.connect(self._log.clear)
         log_btn_row.addWidget(btn_clear)
         log_btn_row.addStretch()
         log_layout.addLayout(log_btn_row)
+        
+        right_layout.addWidget(log_box, 1)
 
-        root.addWidget(log_box, 1)
+        root.addWidget(self._sidebar_frame)
+        root.addWidget(right_content)
 
-    def _add_feature_tab(self, tab: QWidget, label: str, nested: bool = False):
+        self._prev_tab_idx = -1
+
+        # ── Utils tab (first, runs independently) ────────────────────────
+        self._tab_utils = UtilsTab()
+        self._add_feature_tab(self._tab_utils, "Utils") # index 0
+
+        self._tab_guild = GuildRealmRaidTab()
+        self._tab_guild.set_engine(self._engine)
+        self._add_feature_tab(self._tab_guild, "Guild") # index 1
+
+        self._tab_personal = PersonalRealmRaidTab()
+        self._tab_personal.set_engine(self._engine)
+        self._add_feature_tab(self._tab_personal, "Personal") # index 2
+
+        self._tab_autoclick = AutoClickTab()
+        try:
+            self._preview.coord_selected.connect(self._tab_autoclick.on_preview_selected)
+            self._tab_autoclick.request_selection_signal.connect(lambda: self._preview.set_selection_mode(True))
+            self._preview.rect_selected.connect(self._tab_autoclick.on_rect_selected)
+        except Exception:
+            pass
+        self._add_feature_tab(self._tab_autoclick, "AutoClick") # index 3
+
+        self._tab_soul = SoulTab()
+        self._tab_soul.set_engine(self._engine)
+        self._add_feature_tab(self._tab_soul, "Soul") # index 4
+
+        self._tab_demon_parade = AutoDemonParadeTab()
+        self._tab_demon_parade.set_engine(self._engine)
+        self._add_feature_tab(self._tab_demon_parade, "DemonParade") # index 5
+
+        self._tab_auto_duel = AutoDuelTab()
+        self._tab_auto_duel.set_engine(self._engine)
+        self._add_feature_tab(self._tab_auto_duel, "PVP") # index 6
+
+        self._tab_console = ScriptConsoleTab()
+        self._tab_console.set_engine(self._engine)
+        self._add_feature_tab(self._tab_console, "CLI") # index 7
+
+        self._tab_guide = GuideTab()
+        self._add_feature_tab(self._tab_guide, "Guide") # index 8
+
+        self._coming_soon = ComingSoonTab("Tính năng khác")
+        self._add_feature_tab(self._coming_soon, "Others") # index 9
+
+        # Pass the Utils quest-action getter to every feature tab
+        for tab in self._feature_tabs:
+            if hasattr(tab, "set_quest_action_fn"):
+                tab.set_quest_action_fn(self._tab_utils.quest_action)
+
+        self._sidebar_list.setCurrentRow(0)
+
+    def _add_feature_tab(self, tab: QWidget, label: str):
         if hasattr(tab, "log_signal"):
             tab.log_signal.connect(self._on_log)
         if hasattr(tab, "started_signal"):
@@ -320,9 +330,7 @@ class ToolsWindow(QMainWindow):
         if hasattr(tab, "stopped_signal"):
             tab.stopped_signal.connect(self._on_feature_stopped)
         
-        if not nested:
-            self._tab_bar.addTab(label)
-            self._stack.addWidget(tab)
+        self._stack.addWidget(tab)
         
         if hasattr(tab, "is_running"):
             self._feature_tabs.append(tab)
@@ -345,19 +353,20 @@ class ToolsWindow(QMainWindow):
             self._btn_manual_attach.setText(t("btn_connect"))
             
         self._chk_auto.setToolTip(t("auto_connect_tooltip"))
+        self._chk_auto.setText(t("auto_connect_tooltip"))
         self._chk_preview.setText(t("preview_toggle"))
         
-        # Update tabs (index 0 = Utils, then features, then Others)
-        self._tab_bar.setTabText(0, t("tab_utils"))
-        self._tab_bar.setTabText(1, t("tab_guild_raid"))
-        self._tab_bar.setTabText(2, t("tab_personal_raid"))
-        self._tab_bar.setTabText(3, t("tab_autoclick"))
-        self._tab_bar.setTabText(4, t("tab_soul"))
-        self._tab_bar.setTabText(5, t("tab_demon_parade"))
-        self._tab_bar.setTabText(6, t("tab_pvp"))
-        self._tab_bar.setTabText(7, t("tab_cli"))
-        self._tab_bar.setTabText(8, t("tab_guide"))
-        self._tab_bar.setTabText(9, t("tab_others"))
+        # Update sidebar items
+        self._sidebar_list.item(0).setText(t("tab_utils"))
+        self._sidebar_list.item(1).setText(t("tab_guild_raid"))
+        self._sidebar_list.item(2).setText(t("tab_personal_raid"))
+        self._sidebar_list.item(3).setText(t("tab_autoclick"))
+        self._sidebar_list.item(4).setText(t("tab_soul"))
+        self._sidebar_list.item(5).setText(t("tab_demon_parade"))
+        self._sidebar_list.item(6).setText(t("tab_pvp"))
+        self._sidebar_list.item(7).setText(t("tab_cli"))
+        self._sidebar_list.item(8).setText(t("tab_guide"))
+        self._sidebar_list.item(9).setText(t("tab_others"))
 
     def _try_auto_attach(self):
         if not self._chk_auto.isChecked():
@@ -408,6 +417,11 @@ class ToolsWindow(QMainWindow):
             self._capture_worker.set_capture(cap)
         self._btn_manual_attach.setText(t("btn_disconnect"))
         self._window_lbl.setText(t("status_connected", name=name))
+        
+        self._conn_led.setProperty("status", "connected")
+        self._conn_led.style().unpolish(self._conn_led)
+        self._conn_led.style().polish(self._conn_led)
+        
         self._window_lbl.setProperty("status", "connected")
         self._window_lbl.style().unpolish(self._window_lbl)
         self._window_lbl.style().polish(self._window_lbl)
@@ -423,6 +437,11 @@ class ToolsWindow(QMainWindow):
         self._preview.setText(t("status_disconnected").upper())
         self._btn_manual_attach.setText(t("btn_connect"))
         self._window_lbl.setText(t("status_disconnected"))
+        
+        self._conn_led.setProperty("status", "disconnected")
+        self._conn_led.style().unpolish(self._conn_led)
+        self._conn_led.style().polish(self._conn_led)
+        
         self._window_lbl.setProperty("status", "disconnected")
         self._window_lbl.style().unpolish(self._window_lbl)
         self._window_lbl.style().polish(self._window_lbl)
@@ -460,26 +479,17 @@ class ToolsWindow(QMainWindow):
 
     def _on_frame(self, frame: np.ndarray):
         self._preview.update_frame(frame)
-        # Tối ưu: Chỉ gửi frame cho tab đang hiện hoặc tab đang chạy script
         curr_tab = self._stack.currentWidget()
-        
-        # Hỗ trợ tab lồng nhau trong 'Khác'
-        active_widgets = [curr_tab]
-        if isinstance(curr_tab, OthersTab):
-            active_widgets.append(curr_tab.tabs.currentWidget())
-
         for tab in self._feature_tabs:
-            if tab in active_widgets or tab.is_running():
+            if tab == curr_tab or tab.is_running():
                 tab.set_last_frame(frame)
 
     def _on_tab_changed(self, index: int):
-        # Notify previous tab
         if self._prev_tab_idx != -1:
             prev_tab = self._stack.widget(self._prev_tab_idx)
             if hasattr(prev_tab, "on_deactivated"):
                 prev_tab.on_deactivated()
         
-        # Notify new tab
         self._stack.setCurrentIndex(index)
         curr_tab = self._stack.widget(index)
         if hasattr(curr_tab, "on_activated"):
