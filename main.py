@@ -123,7 +123,7 @@ class ToolsWindow(QMainWindow):
         # Logo Area
         self._logo_title = QLabel("ONMYOJI BOT")
         self._logo_title.setObjectName("sidebar_title")
-        self._logo_sub = QLabel("Automation Engine")
+        self._logo_sub = QLabel(t("logo_subtitle"))
         self._logo_sub.setObjectName("sidebar_subtitle")
         
         logo_layout = QVBoxLayout()
@@ -274,15 +274,15 @@ class ToolsWindow(QMainWindow):
 
         # ── Utils tab (first, runs independently) ────────────────────────
         self._tab_utils = UtilsTab()
-        self._add_feature_tab(self._tab_utils, "Utils") # index 0
+        self._add_feature_tab(self._tab_utils) # index 0
 
         self._tab_guild = GuildRealmRaidTab()
         self._tab_guild.set_engine(self._engine)
-        self._add_feature_tab(self._tab_guild, "Guild") # index 1
+        self._add_feature_tab(self._tab_guild) # index 1
 
         self._tab_personal = PersonalRealmRaidTab()
         self._tab_personal.set_engine(self._engine)
-        self._add_feature_tab(self._tab_personal, "Personal") # index 2
+        self._add_feature_tab(self._tab_personal) # index 2
 
         self._tab_autoclick = AutoClickTab()
         try:
@@ -291,29 +291,29 @@ class ToolsWindow(QMainWindow):
             self._preview.rect_selected.connect(self._tab_autoclick.on_rect_selected)
         except Exception:
             pass
-        self._add_feature_tab(self._tab_autoclick, "AutoClick") # index 3
+        self._add_feature_tab(self._tab_autoclick) # index 3
 
         self._tab_soul = SoulTab()
         self._tab_soul.set_engine(self._engine)
-        self._add_feature_tab(self._tab_soul, "Soul") # index 4
+        self._add_feature_tab(self._tab_soul) # index 4
 
         self._tab_demon_parade = AutoDemonParadeTab()
         self._tab_demon_parade.set_engine(self._engine)
-        self._add_feature_tab(self._tab_demon_parade, "DemonParade") # index 5
+        self._add_feature_tab(self._tab_demon_parade) # index 5
 
         self._tab_auto_duel = AutoDuelTab()
         self._tab_auto_duel.set_engine(self._engine)
-        self._add_feature_tab(self._tab_auto_duel, "PVP") # index 6
+        self._add_feature_tab(self._tab_auto_duel) # index 6
 
         self._tab_console = ScriptConsoleTab()
         self._tab_console.set_engine(self._engine)
-        self._add_feature_tab(self._tab_console, "CLI") # index 7
+        self._add_feature_tab(self._tab_console) # index 7
 
         self._tab_guide = GuideTab()
-        self._add_feature_tab(self._tab_guide, "Guide") # index 8
+        self._add_feature_tab(self._tab_guide) # index 8
 
-        self._coming_soon = ComingSoonTab("Tính năng khác")
-        self._add_feature_tab(self._coming_soon, "Others") # index 9
+        self._coming_soon = ComingSoonTab("tab_others")
+        self._add_feature_tab(self._coming_soon) # index 9
 
         # Pass the Utils quest-action getter to every feature tab
         for tab in self._feature_tabs:
@@ -322,7 +322,7 @@ class ToolsWindow(QMainWindow):
 
         self._sidebar_list.setCurrentRow(0)
 
-    def _add_feature_tab(self, tab: QWidget, label: str):
+    def _add_feature_tab(self, tab: QWidget):
         if hasattr(tab, "log_signal"):
             tab.log_signal.connect(self._on_log)
         if hasattr(tab, "started_signal"):
@@ -343,6 +343,7 @@ class ToolsWindow(QMainWindow):
 
     def update_texts(self, lang=None):
         self.setWindowTitle(t("app_title"))
+        self._logo_sub.setText(t("logo_subtitle"))
         self._proc_combo.setToolTip(t("tooltip_proc_combo"))
         self._btn_refresh_proc.setToolTip(t("tooltip_refresh_proc"))
         if self._capture:
@@ -485,6 +486,8 @@ class ToolsWindow(QMainWindow):
                 tab.set_last_frame(frame)
 
     def _on_tab_changed(self, index: int):
+        if index == -1:
+            return
         if self._prev_tab_idx != -1:
             prev_tab = self._stack.widget(self._prev_tab_idx)
             if hasattr(prev_tab, "on_deactivated"):
