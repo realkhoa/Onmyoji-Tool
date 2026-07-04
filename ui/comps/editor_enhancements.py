@@ -203,6 +203,7 @@ class DSLCompleter(QCompleter):
 class ImagePreviewPopup(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent, Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setObjectName("image_preview_popup")
         self.setStyleSheet("""

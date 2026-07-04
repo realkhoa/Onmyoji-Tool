@@ -97,7 +97,7 @@ class LineNumberEditor(QPlainTextEdit):
         block_text = tc.block().text()
         pos_in_block = tc.positionInBlock()
         # Find prefix containing word characters, forward slash, period, or starting quotes
-        match = re.search(r'[\'"]?[a-zA-Z0-9_\/.]*$', block_text[:pos_in_block])
+        match = re.search(r'[\'"]?[\$a-zA-Z0-9_\/.]*$', block_text[:pos_in_block])
         if match:
             return match.group(0)
         return ""
@@ -106,8 +106,10 @@ class LineNumberEditor(QPlainTextEdit):
         self._symbol_timer.start(300)
 
     def refresh_symbols(self):
-        self._symbol_cache = parse_symbols(self.toPlainText())
-        self.updateCompleterModel()
+        new_symbols = parse_symbols(self.toPlainText())
+        if set(new_symbols) != set(self._symbol_cache):
+            self._symbol_cache = new_symbols
+            self.updateCompleterModel()
 
     def updateCompleterModel(self):
         if not self._completer:
@@ -229,8 +231,7 @@ class LineNumberEditor(QPlainTextEdit):
         if full_path.exists():
             if self.preview_popup.show_image(full_path, self._hovered_file):
                 if self._hover_pos:
-                    from PyQt6.QtGui import QGuiApplication
-                    screen = QGuiApplication.primaryScreen().geometry()
+                    screen = self.screen().geometry()
                     popup_w = self.preview_popup.width()
                     popup_h = self.preview_popup.height()
                     new_x = self._hover_pos.x() + 15
