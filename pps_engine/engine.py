@@ -36,6 +36,8 @@ class DSLEngine(WindowMixin, VisionMixin):
         self._reference_size: tuple[int, int] = (1920, 1080)
         self._prev_gray_roi: Optional[np.ndarray] = None
         self._functions: dict[str, tuple[list[str], int, int]] = {}
+        self._template_cache: dict[str, np.ndarray] = {}
+        self._last_successful_scale: float = 1.0
 
     def set_capture(self, capture: Optional[WindowCapture]):
         with self._lock:

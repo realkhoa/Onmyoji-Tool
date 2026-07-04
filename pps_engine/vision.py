@@ -32,17 +32,25 @@ class VisionMixin:
         frame = self._get_frame()
         if frame is None:
             return None, None
-        tpl_path = self._images_dir / image_name
-        if not tpl_path.exists():
-            return None, None
-        template = cv2.imread(str(tpl_path))
-        if template is None:
-            return None, None
+
+        if not hasattr(self, "_template_cache"):
+            self._template_cache = {}
+
+        if image_name in self._template_cache:
+            template = self._template_cache[image_name]
+        else:
+            tpl_path = self._images_dir / image_name
+            if not tpl_path.exists():
+                return None, None
+            template = cv2.imread(str(tpl_path))
+            if template is None:
+                return None, None
+            self._template_cache[image_name] = template
+
         return frame, template
 
-    @staticmethod
     def _match_template_scaled(
-        haystack, needle, *, use_gray: bool, threshold: float
+        self, haystack, needle, *, use_gray: bool, threshold: float
     ) -> tuple[float, Optional[tuple[int, int]], float]:
         """Try matching *needle* in *haystack* at scale 1.0 and then at scaled variants.
 
@@ -60,41 +68,61 @@ class VisionMixin:
         fh, fw = haystack_g.shape[:2]
         th, tw = needle_g.shape[:2]
 
-        # Try the native (1:1) scale first — cheapest path.
-        if tw <= fw and th <= fh:
-            result = cv2.matchTemplate(haystack_g, needle_g, cv2.TM_CCOEFF_NORMED)
-            _, max_val, _, max_loc = cv2.minMaxLoc(result)
-            if max_val >= _EARLY_EXIT_THRESHOLD:
-                return max_val, max_loc, 1.0
-            if max_val >= threshold:
-                # Keep as best candidate but still try scales to see if we can do better.
-                best_val, best_loc, best_scale = max_val, max_loc, 1.0
-            else:
-                best_val, best_loc, best_scale = -1.0, None, 1.0
-        else:
-            best_val, best_loc, best_scale = -1.0, None, 1.0
+        if not hasattr(self, "_last_successful_scale") or self._last_successful_scale is None:
+            self._last_successful_scale = 1.0
 
-        # Try scaled variants.
+        def try_scale(scale: float) -> tuple[float, Optional[tuple[int, int]]]:
+            if abs(scale - 1.0) < 1e-5:
+                if tw <= fw and th <= fh:
+                    result = cv2.matchTemplate(haystack_g, needle_g, cv2.TM_CCOEFF_NORMED)
+                    _, max_val, _, max_loc = cv2.minMaxLoc(result)
+                    return max_val, max_loc
+                return -1.0, None
+            else:
+                new_w = int(tw * scale)
+                new_h = int(th * scale)
+                if new_w < _MIN_TPL_DIM or new_h < _MIN_TPL_DIM:
+                    return -1.0, None
+                if new_w > fw or new_h > fh:
+                    return -1.0, None
+                resized = cv2.resize(needle_g, (new_w, new_h), interpolation=cv2.INTER_AREA)
+                result = cv2.matchTemplate(haystack_g, resized, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, max_loc = cv2.minMaxLoc(result)
+                return max_val, max_loc
+
+        # Try the native (1:1) scale first — cheapest path.
+        best_val, best_loc, best_scale = -1.0, None, 1.0
+        val, loc = try_scale(1.0)
+        if val >= _EARLY_EXIT_THRESHOLD:
+            self._last_successful_scale = 1.0
+            return val, loc, 1.0
+        if val >= threshold:
+            best_val, best_loc, best_scale = val, loc, 1.0
+
+        # Try the last successful scale next.
+        last_scale = self._last_successful_scale
+        if abs(last_scale - 1.0) >= 0.05:
+            val, loc = try_scale(last_scale)
+            if val >= _EARLY_EXIT_THRESHOLD:
+                self._last_successful_scale = last_scale
+                return val, loc, last_scale
+            if val > best_val:
+                best_val, best_loc, best_scale = val, loc, last_scale
+
+        # Try other scaled variants.
         for scale in _SCALE_VALUES:
             if abs(scale - 1.0) < 0.05:
                 continue
-            new_w = int(tw * scale)
-            new_h = int(th * scale)
-            if new_w < _MIN_TPL_DIM or new_h < _MIN_TPL_DIM:
+            if abs(scale - last_scale) < 0.05:
                 continue
-            if new_w > fw or new_h > fh:
-                continue
-            resized = cv2.resize(needle_g, (new_w, new_h), interpolation=cv2.INTER_AREA)
-            result = cv2.matchTemplate(haystack_g, resized, cv2.TM_CCOEFF_NORMED)
-            _, max_val, _, max_loc = cv2.minMaxLoc(result)
-            if max_val > best_val:
-                best_val = max_val
-                best_loc = max_loc
-                best_scale = scale
-                if max_val >= _EARLY_EXIT_THRESHOLD:
+            val, loc = try_scale(scale)
+            if val > best_val:
+                best_val, best_loc, best_scale = val, loc, scale
+                if val >= _EARLY_EXIT_THRESHOLD:
                     break
 
         if best_val >= threshold and best_loc is not None:
+            self._last_successful_scale = best_scale
             return best_val, best_loc, best_scale
         return best_val, None, best_scale
 
