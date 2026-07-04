@@ -48,16 +48,16 @@ def get_image_files():
 
 def parse_symbols(text):
     # Clean the input text by stripping all comments and string literals
-    text = re.sub(r'#[^\n]*', '', text)
     text = re.sub(r'"[^"\\]*(\\.[^"\\]*)*"', '', text)
     text = re.sub(r"'[^'\\]*(\\.[^'\\]*)*'", '', text)
+    text = re.sub(r'#[^\n]*', '', text)
 
     symbols = set()
     funcs = re.findall(r'\bfunction\s+([a-zA-Z_]\w*)', text, re.IGNORECASE)
     symbols.update(funcs)
     
     vars1 = re.findall(r'\bset\s+([a-zA-Z_]\w*)', text, re.IGNORECASE)
-    vars2 = re.findall(r'\b([a-zA-Z_]\w*)\s*=(?!=)', text)
+    vars2 = re.findall(r'\b([a-zA-Z_]\w*)\s*[-+*/%]?=(?!=)', text)
     symbols.update(vars1)
     symbols.update(vars2)
     
@@ -220,7 +220,7 @@ class ImagePreviewPopup(QFrame):
         self.adjustSize()
         
     def show_image(self, file_path, filename):
-        pixmap = QPixmap(file_path)
+        pixmap = QPixmap(str(file_path))
         if pixmap.isNull():
             return False
             
