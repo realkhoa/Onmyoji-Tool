@@ -33,18 +33,22 @@ class VisionMixin:
         if frame is None:
             return None, None
 
-        if not hasattr(self, "_template_cache"):
-            self._template_cache = {}
+        with self._lock:
+            if not hasattr(self, "_template_cache"):
+                self._template_cache = {}
+            cached_template = self._template_cache.get(image_name)
 
-        if image_name in self._template_cache:
-            template = self._template_cache[image_name]
-        else:
-            tpl_path = self._images_dir / image_name
-            if not tpl_path.exists():
-                return None, None
-            template = cv2.imread(str(tpl_path))
-            if template is None:
-                return None, None
+        if cached_template is not None:
+            return frame, cached_template
+
+        tpl_path = self._images_dir / image_name
+        if not tpl_path.exists():
+            return None, None
+        template = cv2.imread(str(tpl_path))
+        if template is None:
+            return None, None
+
+        with self._lock:
             self._template_cache[image_name] = template
 
         return frame, template
@@ -68,8 +72,10 @@ class VisionMixin:
         fh, fw = haystack_g.shape[:2]
         th, tw = needle_g.shape[:2]
 
-        if not hasattr(self, "_last_successful_scale") or self._last_successful_scale is None:
-            self._last_successful_scale = 1.0
+        with self._lock:
+            if not hasattr(self, "_last_successful_scale") or self._last_successful_scale is None:
+                self._last_successful_scale = 1.0
+            last_scale = self._last_successful_scale
 
         def try_scale(scale: float) -> tuple[float, Optional[tuple[int, int]]]:
             if abs(scale - 1.0) < 1e-5:
@@ -94,17 +100,18 @@ class VisionMixin:
         best_val, best_loc, best_scale = -1.0, None, 1.0
         val, loc = try_scale(1.0)
         if val >= _EARLY_EXIT_THRESHOLD:
-            self._last_successful_scale = 1.0
+            with self._lock:
+                self._last_successful_scale = 1.0
             return val, loc, 1.0
         if val >= threshold:
             best_val, best_loc, best_scale = val, loc, 1.0
 
         # Try the last successful scale next.
-        last_scale = self._last_successful_scale
         if abs(last_scale - 1.0) >= 0.05:
             val, loc = try_scale(last_scale)
             if val >= _EARLY_EXIT_THRESHOLD:
-                self._last_successful_scale = last_scale
+                with self._lock:
+                    self._last_successful_scale = last_scale
                 return val, loc, last_scale
             if val > best_val:
                 best_val, best_loc, best_scale = val, loc, last_scale
@@ -122,7 +129,8 @@ class VisionMixin:
                     break
 
         if best_val >= threshold and best_loc is not None:
-            self._last_successful_scale = best_scale
+            with self._lock:
+                self._last_successful_scale = best_scale
             return best_val, best_loc, best_scale
         return best_val, None, best_scale
 
