@@ -113,39 +113,42 @@ class DSLHighlighter(QSyntaxHighlighter):
 
     def setup_rules(self):
         self.rules.clear()
-        
-        # Labels: name:
-        self.rules.append((re.compile(r'\b[a-zA-Z_]\w*(?=:)'), self.label_format))
-        
-        # Numbers: integers and floats
-        self.rules.append((re.compile(r'\b\d+(?:\.\d+)?\b'), self.number_format))
-        
-        # Flow Keywords
-        for kw in DSL_FLOW_KEYWORDS:
-            self.rules.append((re.compile(rf'\b{kw}\b', re.IGNORECASE), self.flow_format))
-            
-        # Action Keywords
-        for kw in DSL_ACTION_KEYWORDS:
-            self.rules.append((re.compile(rf'\b{kw}\b', re.IGNORECASE), self.action_format))
-            
-        # Built-in Functions
-        for func in BUILTIN_FUNCTIONS:
-            self.rules.append((re.compile(rf'\b{func}(?=\()', re.IGNORECASE), self.func_format))
-            
-        # Math module functions
-        self.rules.append((re.compile(r'\bmath\.\w+(?=\()'), self.func_format))
-        
-        # Comments: #...
-        self.rules.append((re.compile(r'#[^\n]*'), self.comment_format))
-        
-        # Strings: "..." or '...'
-        self.rules.append((re.compile(r'"[^"\\]*(\\.[^"\\]*)*"'), self.string_format))
-        self.rules.append((re.compile(r"'[^'\\]*(\\.[^'\\]*)*'"), self.string_format))
+        self.tokenizer = re.compile(
+            r'(?P<comment>#[^\n]*)'
+            r'|(?P<string>"[^"\\]*(?:\\.[^"\\]*)*"|\'[^\'\\]*(?:\\.[^\'\\]*)*\')'
+            r'|(?P<label>\b[a-zA-Z_]\w*(?=:))'
+            r'|(?P<number>\b\d+(?:\.\d+)?\b)'
+            r'|(?P<flow>\b(?:loop|forever|do|until|break|continue|if|elif|else|exists|exists_exact|goto|wait|wait_random|resize|log|function|return|set)\b)'
+            r'|(?P<action>\b(?:click|rclick|dclick|move|drag|scroll|key|type|find_and_click|wait_for|wait_and_click|count|drag_to|drag_image|drag_offset|find_and_click_largest_shiki|throw_at_largest_shiki)\b)'
+            r'|(?P<builtin>\b(?:rand|randint|min|max|abs)(?=\())'
+            r'|(?P<math>\bmath\.\w+(?=\())',
+            re.IGNORECASE
+        )
 
     def highlightBlock(self, text):
-        for pattern, fmt in self.rules:
-            for match in pattern.finditer(text):
-                self.setFormat(match.start(), match.end() - match.start(), fmt)
+        for match in self.tokenizer.finditer(text):
+            group_name = match.lastgroup
+            if not group_name:
+                continue
+            
+            if group_name == 'comment':
+                fmt = self.comment_format
+            elif group_name == 'string':
+                fmt = self.string_format
+            elif group_name == 'label':
+                fmt = self.label_format
+            elif group_name == 'number':
+                fmt = self.number_format
+            elif group_name == 'flow':
+                fmt = self.flow_format
+            elif group_name == 'action':
+                fmt = self.action_format
+            elif group_name in ('builtin', 'math'):
+                fmt = self.func_format
+            else:
+                continue
+                
+            self.setFormat(match.start(), match.end() - match.start(), fmt)
 
 
 class DSLCompleter(QCompleter):

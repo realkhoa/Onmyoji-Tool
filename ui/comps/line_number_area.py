@@ -45,12 +45,23 @@ class LineNumberEditor(QPlainTextEdit):
         self._completer = None
         self._hovered_file = None
         self._hover_pos = None
+        self._symbol_cache = []
         
         self.highlighter = DSLHighlighter(self.document(), is_dark=True)
         self.preview_popup = ImagePreviewPopup(self)
         
         self._hover_timer = QTimer(self)
         self._hover_timer.timeout.connect(self.show_hover_preview)
+        
+        self.verticalScrollBar().valueChanged.connect(self.preview_popup.hide)
+        self.verticalScrollBar().valueChanged.connect(self._hover_timer.stop)
+        self.horizontalScrollBar().valueChanged.connect(self.preview_popup.hide)
+        self.horizontalScrollBar().valueChanged.connect(self._hover_timer.stop)
+        
+        self._symbol_timer = QTimer(self)
+        self._symbol_timer.setSingleShot(True)
+        self._symbol_timer.timeout.connect(self.refresh_symbols)
+        self.textChanged.connect(self.on_text_changed)
         
         self.viewport().setMouseTracking(True)
         self._image_cache = get_image_files()
@@ -62,7 +73,10 @@ class LineNumberEditor(QPlainTextEdit):
 
     def setCompleter(self, completer):
         if self._completer:
-            self._completer.activated.disconnect()
+            try:
+                self._completer.activated.disconnect(self.insertCompletion)
+            except TypeError:
+                pass
         self._completer = completer
         if not completer:
             return
@@ -88,11 +102,17 @@ class LineNumberEditor(QPlainTextEdit):
             return match.group(0)
         return ""
 
+    def on_text_changed(self):
+        self._symbol_timer.start(300)
+
+    def refresh_symbols(self):
+        self._symbol_cache = parse_symbols(self.toPlainText())
+
     def updateCompleterModel(self):
         if not self._completer:
             return
         
-        symbols = parse_symbols(self.toPlainText())
+        symbols = self._symbol_cache
         quoted_images = [f'"{img}"' for img in self._image_cache]
         all_completions = sorted(list(
             ALL_STATIC_KEYWORDS.union(symbols).union(quoted_images)
@@ -187,6 +207,10 @@ class LineNumberEditor(QPlainTextEdit):
         self.preview_popup.hide()
         super().leaveEvent(event)
 
+    def showEvent(self, event):
+        self._image_cache = get_image_files()
+        super().showEvent(event)
+
     def show_hover_preview(self):
         self._hover_timer.stop()
         if not self._hovered_file:
@@ -196,10 +220,22 @@ class LineNumberEditor(QPlainTextEdit):
         if full_path.exists():
             if self.preview_popup.show_image(full_path, self._hovered_file):
                 if self._hover_pos:
-                    self.preview_popup.move(
-                        self._hover_pos.x() + 15,
-                        self._hover_pos.y() + 15
-                    )
+                    from PyQt6.QtGui import QGuiApplication
+                    screen = QGuiApplication.primaryScreen().geometry()
+                    popup_w = self.preview_popup.width()
+                    popup_h = self.preview_popup.height()
+                    new_x = self._hover_pos.x() + 15
+                    new_y = self._hover_pos.y() + 15
+                    
+                    if new_x + popup_w > screen.right():
+                        new_x = self._hover_pos.x() - popup_w - 15
+                    if new_y + popup_h > screen.bottom():
+                        new_y = self._hover_pos.y() - popup_h - 15
+                        
+                    new_x = max(screen.left(), new_x)
+                    new_y = max(screen.top(), new_y)
+                    
+                    self.preview_popup.move(new_x, new_y)
                     self.preview_popup.show()
 
     def lineNumberAreaWidth(self):
