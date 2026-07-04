@@ -47,21 +47,20 @@ def get_image_files():
 
 
 def parse_symbols(text):
-    # Clean the input text by stripping all comments and string literals
-    text = re.sub(r'"[^"\\]*(\\.[^"\\]*)*"', '', text)
-    text = re.sub(r"'[^'\\]*(\\.[^'\\]*)*'", '', text)
-    text = re.sub(r'#[^\n]*', '', text)
-
+    # Strip comments and string literals in a single pass to avoid overlapping matching bugs
+    pattern = r'#[^\n]*|"[^"\\]*(?:\\.[^"\\]*)*"|\'[^\'\\]*(?:\\.[^\'\\]*)*\''
+    text_clean = re.sub(pattern, '', text)
+    
     symbols = set()
-    funcs = re.findall(r'\bfunction\s+([a-zA-Z_]\w*)', text, re.IGNORECASE)
+    funcs = re.findall(r'\bfunction\s+([a-zA-Z_]\w*)', text_clean, re.IGNORECASE)
     symbols.update(funcs)
     
-    vars1 = re.findall(r'\bset\s+([a-zA-Z_]\w*)', text, re.IGNORECASE)
-    vars2 = re.findall(r'\b([a-zA-Z_]\w*)\s*[-+*/%]?=(?!=)', text)
+    vars1 = re.findall(r'\bset\s+([a-zA-Z_]\w*)', text_clean, re.IGNORECASE)
+    vars2 = re.findall(r'\b([a-zA-Z_]\w*)\s*[-+*/%]?=(?!=)', text_clean)
     symbols.update(vars1)
     symbols.update(vars2)
     
-    labels = re.findall(r'\b([a-zA-Z_]\w*)\s*:', text)
+    labels = re.findall(r'\b([a-zA-Z_]\w*)\s*:', text_clean)
     symbols.update(labels)
     
     # Filter out empty or keywords
