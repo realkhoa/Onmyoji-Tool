@@ -107,13 +107,18 @@ class LineNumberEditor(QPlainTextEdit):
 
     def refresh_symbols(self):
         self._symbol_cache = parse_symbols(self.toPlainText())
+        self.updateCompleterModel()
 
     def updateCompleterModel(self):
         if not self._completer:
             return
         
         symbols = self._symbol_cache
-        quoted_images = [f'"{img}"' for img in self._image_cache]
+        quoted_images = []
+        for img in self._image_cache:
+            quoted_images.append(img)          # e.g. home_explore.png
+            quoted_images.append(f'"{img}"')    # e.g. "home_explore.png"
+            quoted_images.append(f"'{img}'")    # e.g. 'home_explore.png'
         all_completions = sorted(list(
             ALL_STATIC_KEYWORDS.union(symbols).union(quoted_images)
         ))
@@ -140,7 +145,7 @@ class LineNumberEditor(QPlainTextEdit):
             
         is_visible = self._completer.popup().isVisible()
         is_backspace = e.key() == Qt.Key.Key_Backspace
-        is_trigger_char = bool(e.text() and (e.text().isalnum() or e.text() in ('_', '"', "'", '/', '.')))
+        is_trigger_char = bool(e.text() and (e.text().isalnum() or e.text() in ('_', '"', "'", '/', '.', '$')))
         
         should_trigger = is_shortcut or (is_visible and is_backspace) or is_trigger_char
         
@@ -148,8 +153,6 @@ class LineNumberEditor(QPlainTextEdit):
             self._completer.popup().hide()
             return
             
-        self.updateCompleterModel()
-        
         completion_prefix = self.textUnderCursor()
         
         has_modifier = (e.modifiers() != Qt.KeyboardModifier.NoModifier) and not is_shortcut
@@ -207,9 +210,15 @@ class LineNumberEditor(QPlainTextEdit):
         self.preview_popup.hide()
         super().leaveEvent(event)
 
+    def hideEvent(self, event):
+        self._hover_timer.stop()
+        self.preview_popup.hide()
+        super().hideEvent(event)
+
     def showEvent(self, event):
         self._image_cache = get_image_files()
         super().showEvent(event)
+        self.updateCompleterModel()
 
     def show_hover_preview(self):
         self._hover_timer.stop()

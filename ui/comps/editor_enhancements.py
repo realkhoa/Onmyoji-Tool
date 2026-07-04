@@ -16,7 +16,8 @@ IMAGES_DIR = BASE_DIR / "images"
 DSL_FLOW_KEYWORDS = {
     "loop", "forever", "do", "until", "break", "continue", "if", "elif",
     "else", "exists", "exists_exact", "goto", "wait", "wait_random",
-    "resize", "log", "function", "return", "set"
+    "resize", "log", "function", "return", "set", "binding", "boolean",
+    "slider", "number", "string"
 }
 
 DSL_ACTION_KEYWORDS = {
@@ -63,6 +64,9 @@ def parse_symbols(text):
     labels = re.findall(r'\b([a-zA-Z_]\w*)\s*:', text_clean)
     symbols.update(labels)
     
+    bindings = re.findall(r'\bbinding\s+(\$[a-zA-Z_]\w*)', text_clean, re.IGNORECASE)
+    symbols.update(bindings)
+    
     # Filter out empty or keywords
     symbols = {s for s in symbols if s and s.lower() not in ALL_STATIC_KEYWORDS}
     return list(symbols)
@@ -90,6 +94,7 @@ class DSLHighlighter(QSyntaxHighlighter):
         self.label_format = QTextCharFormat()
         self.number_format = QTextCharFormat()
         self.func_format = QTextCharFormat()
+        self.var_format = QTextCharFormat()
         
         self.update_colors()
 
@@ -102,6 +107,7 @@ class DSLHighlighter(QSyntaxHighlighter):
             self.label_format.setForeground(QColor("#f59e0b"))     # Amber
             self.number_format.setForeground(QColor("#60a5fa"))    # Sky blue
             self.func_format.setForeground(QColor("#06b6d4"))      # Cyan
+            self.var_format.setForeground(QColor("#fda4af"))       # Rose pink
         else:
             self.comment_format.setForeground(QColor("#8e8e93"))
             self.flow_format.setForeground(QColor("#7c3aed"))
@@ -110,6 +116,7 @@ class DSLHighlighter(QSyntaxHighlighter):
             self.label_format.setForeground(QColor("#d97706"))
             self.number_format.setForeground(QColor("#2563eb"))
             self.func_format.setForeground(QColor("#0891b2"))
+            self.var_format.setForeground(QColor("#db2777"))
 
     def setup_rules(self):
         self.rules.clear()
@@ -118,10 +125,11 @@ class DSLHighlighter(QSyntaxHighlighter):
             r'|(?P<string>"[^"\\]*(?:\\.[^"\\]*)*"|\'[^\'\\]*(?:\\.[^\'\\]*)*\')'
             r'|(?P<label>\b[a-zA-Z_]\w*(?=:))'
             r'|(?P<number>\b\d+(?:\.\d+)?\b)'
-            r'|(?P<flow>\b(?:loop|forever|do|until|break|continue|if|elif|else|exists|exists_exact|goto|wait|wait_random|resize|log|function|return|set)\b)'
+            r'|(?P<flow>\b(?:loop|forever|do|until|break|continue|if|elif|else|exists|exists_exact|goto|wait|wait_random|resize|log|function|return|set|binding|boolean|slider|number|string)\b)'
             r'|(?P<action>\b(?:click|rclick|dclick|move|drag|scroll|key|type|find_and_click|wait_for|wait_and_click|count|drag_to|drag_image|drag_offset|find_and_click_largest_shiki|throw_at_largest_shiki)\b)'
             r'|(?P<builtin>\b(?:rand|randint|min|max|abs)(?=\())'
-            r'|(?P<math>\bmath\.\w+(?=\())',
+            r'|(?P<math>\bmath\.\w+(?=\())'
+            r'|(?P<variable>\$[a-zA-Z_]\w*)',
             re.IGNORECASE
         )
 
@@ -145,6 +153,8 @@ class DSLHighlighter(QSyntaxHighlighter):
                 fmt = self.action_format
             elif group_name in ('builtin', 'math'):
                 fmt = self.func_format
+            elif group_name == 'variable':
+                fmt = self.var_format
             else:
                 continue
                 
@@ -193,6 +203,7 @@ class DSLCompleter(QCompleter):
 class ImagePreviewPopup(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent, Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setObjectName("image_preview_popup")
         self.setStyleSheet("""
             QFrame#image_preview_popup {
