@@ -99,7 +99,8 @@ class VisionMixin:
         # Try the native (1:1) scale first — cheapest path.
         best_val, best_loc, best_scale = -1.0, None, 1.0
         val, loc = try_scale(1.0)
-        if val >= _EARLY_EXIT_THRESHOLD:
+        early_exit_thresh = max(_EARLY_EXIT_THRESHOLD, threshold)
+        if val >= early_exit_thresh:
             with self._lock:
                 self._last_successful_scale = 1.0
             return val, loc, 1.0
@@ -109,7 +110,7 @@ class VisionMixin:
         # Try the last successful scale next.
         if abs(last_scale - 1.0) >= 0.05:
             val, loc = try_scale(last_scale)
-            if val >= _EARLY_EXIT_THRESHOLD:
+            if val >= early_exit_thresh:
                 with self._lock:
                     self._last_successful_scale = last_scale
                 return val, loc, last_scale
@@ -125,7 +126,7 @@ class VisionMixin:
             val, loc = try_scale(scale)
             if val > best_val:
                 best_val, best_loc, best_scale = val, loc, scale
-                if val >= _EARLY_EXIT_THRESHOLD:
+                if val >= early_exit_thresh:
                     break
 
         if best_val >= threshold and best_loc is not None:
