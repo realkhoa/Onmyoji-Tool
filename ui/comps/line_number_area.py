@@ -75,7 +75,7 @@ class LineNumberEditor(QPlainTextEdit):
         if self._completer:
             try:
                 self._completer.activated.disconnect(self.insertCompletion)
-            except TypeError:
+            except (TypeError, RuntimeError):
                 pass
         self._completer = completer
         if not completer:
@@ -158,7 +158,7 @@ class LineNumberEditor(QPlainTextEdit):
         completion_prefix = self.textUnderCursor()
         
         has_modifier = (e.modifiers() != Qt.KeyboardModifier.NoModifier) and not is_shortcut
-        if not is_shortcut and (has_modifier or not e.text() or len(completion_prefix) < 1):
+        if not is_shortcut and not is_backspace and (has_modifier or not e.text() or len(completion_prefix) < 1):
             self._completer.popup().hide()
             return
             
@@ -180,8 +180,11 @@ class LineNumberEditor(QPlainTextEdit):
             end = match.end()
             if start <= index <= end:
                 filename = match.group(1) or match.group(2)
-                if filename and filename in self._image_cache:
-                    return filename
+                if filename:
+                    filename_lower = filename.lower()
+                    for cached in self._image_cache:
+                        if cached.lower() == filename_lower:
+                            return cached
         return None
 
     def mouseMoveEvent(self, event):
@@ -216,6 +219,11 @@ class LineNumberEditor(QPlainTextEdit):
         self._hover_timer.stop()
         self.preview_popup.hide()
         super().hideEvent(event)
+
+    def focusOutEvent(self, event):
+        self._hover_timer.stop()
+        self.preview_popup.hide()
+        super().focusOutEvent(event)
 
     def showEvent(self, event):
         self._image_cache = get_image_files()
@@ -268,6 +276,8 @@ class LineNumberEditor(QPlainTextEdit):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self._hover_timer.stop()
+        self.preview_popup.hide()
         cr = self.contentsRect()
         self.lineNumberArea.setGeometry(
             QRect(cr.left(), cr.top(), self.lineNumberAreaWidth(), cr.height())
