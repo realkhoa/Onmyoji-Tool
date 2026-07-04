@@ -1,6 +1,17 @@
+import re
 from PyQt6.QtWidgets import QWidget, QPlainTextEdit, QTextEdit
-from PyQt6.QtCore import QSize, QRect, Qt
+from PyQt6.QtCore import QSize, QRect, Qt, QTimer, QStringListModel
 from PyQt6.QtGui import QPainter, QColor, QTextFormat
+
+from ui.comps.editor_enhancements import (
+    DSLHighlighter,
+    DSLCompleter,
+    ImagePreviewPopup,
+    parse_symbols,
+    get_image_files,
+    ALL_STATIC_KEYWORDS,
+    IMAGES_DIR
+)
 
 class LineNumberArea(QWidget):
     def __init__(self, editor):
@@ -29,7 +40,167 @@ class LineNumberEditor(QPlainTextEdit):
         self.cursorPositionChanged.connect(self.highlightCurrentLine)
         
         self.updateLineNumberAreaWidth(0)
+        
+        # Editor enhancements initialization
+        self._completer = None
+        self._hovered_file = None
+        self._hover_pos = None
+        
+        self.highlighter = DSLHighlighter(self.document(), is_dark=True)
+        self.preview_popup = ImagePreviewPopup(self)
+        
+        self._hover_timer = QTimer(self)
+        self._hover_timer.timeout.connect(self.show_hover_preview)
+        
+        self.viewport().setMouseTracking(True)
+        self._image_cache = get_image_files()
+        
+        completer = DSLCompleter(self, is_dark=True)
+        self.setCompleter(completer)
+        
         self.set_theme(True) # Default dark
+
+    def setCompleter(self, completer):
+        if self._completer:
+            self._completer.activated.disconnect()
+        self._completer = completer
+        if not completer:
+            return
+        completer.setWidget(self)
+        completer.activated.connect(self.insertCompletion)
+
+    def insertCompletion(self, completion):
+        if self._completer.widget() is not self:
+            return
+        tc = self.textCursor()
+        prefix = self.textUnderCursor()
+        tc.movePosition(tc.MoveOperation.Left, tc.MoveMode.KeepAnchor, len(prefix))
+        tc.insertText(completion)
+        self.setTextCursor(tc)
+
+    def textUnderCursor(self):
+        tc = self.textCursor()
+        block_text = tc.block().text()
+        pos_in_block = tc.positionInBlock()
+        # Find prefix containing word characters, forward slash, period, or starting quotes
+        match = re.search(r'[\'"]?[a-zA-Z0-9_\/.]*$', block_text[:pos_in_block])
+        if match:
+            return match.group(0)
+        return ""
+
+    def updateCompleterModel(self):
+        if not self._completer:
+            return
+        
+        symbols = parse_symbols(self.toPlainText())
+        quoted_images = [f'"{img}"' for img in self._image_cache]
+        all_completions = sorted(list(
+            ALL_STATIC_KEYWORDS.union(symbols).union(quoted_images)
+        ))
+        
+        model = self._completer.model()
+        if not isinstance(model, QStringListModel):
+            model = QStringListModel(self._completer)
+            self._completer.setModel(model)
+        model.setStringList(all_completions)
+
+    def keyPressEvent(self, e):
+        if self._completer and self._completer.popup().isVisible():
+            if e.key() in (Qt.Key.Key_Enter, Qt.Key.Key_Return, Qt.Key.Key_Escape, Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
+                e.ignore()
+                return
+        
+        is_shortcut = (e.modifiers() & Qt.KeyboardModifier.ControlModifier) and e.key() == Qt.Key.Key_Space
+        
+        if not is_shortcut:
+            super().keyPressEvent(e)
+            
+        if not self._completer:
+            return
+            
+        is_visible = self._completer.popup().isVisible()
+        is_backspace = e.key() == Qt.Key.Key_Backspace
+        is_trigger_char = bool(e.text() and (e.text().isalnum() or e.text() in ('_', '"', "'", '/', '.')))
+        
+        should_trigger = is_shortcut or (is_visible and is_backspace) or is_trigger_char
+        
+        if not should_trigger:
+            self._completer.popup().hide()
+            return
+            
+        self.updateCompleterModel()
+        
+        completion_prefix = self.textUnderCursor()
+        
+        has_modifier = (e.modifiers() != Qt.KeyboardModifier.NoModifier) and not is_shortcut
+        if not is_shortcut and (has_modifier or not e.text() or len(completion_prefix) < 1):
+            self._completer.popup().hide()
+            return
+            
+        if completion_prefix != self._completer.completionPrefix():
+            self._completer.setCompletionPrefix(completion_prefix)
+            self._completer.popup().setCurrentIndex(self._completer.completionModel().index(0, 0))
+            
+        cr = self.cursorRect()
+        cr.setWidth(self._completer.popup().sizeHintForColumn(0) + self._completer.popup().verticalScrollBar().sizeHint().width())
+        self._completer.complete(cr)
+
+    def get_image_token_at_cursor(self, cursor):
+        text = cursor.block().text()
+        index = cursor.positionInBlock()
+        
+        matches = re.finditer(r'"([^"\\]*(?:\\.[^"\\]*)*)"|\'([^\'\\]*(?:\\.[^\'\\]*)*)\'', text)
+        for match in matches:
+            start = match.start()
+            end = match.end()
+            if start <= index <= end:
+                filename = match.group(1) or match.group(2)
+                if filename and filename in self._image_cache:
+                    return filename
+        return None
+
+    def mouseMoveEvent(self, event):
+        pos = event.position().toPoint()
+        cursor = self.cursorForPosition(pos)
+        filename = self.get_image_token_at_cursor(cursor)
+        
+        if filename:
+            if filename != self._hovered_file:
+                self._hover_timer.stop()
+                self.preview_popup.hide()
+                self._hovered_file = filename
+                self._hover_pos = event.globalPosition().toPoint()
+                self._hover_timer.start(400)
+        else:
+            if self._hovered_file is not None:
+                self._hover_timer.stop()
+                self._hovered_file = None
+                self._hover_pos = None
+                self.preview_popup.hide()
+                
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event):
+        self._hover_timer.stop()
+        self._hovered_file = None
+        self._hover_pos = None
+        self.preview_popup.hide()
+        super().leaveEvent(event)
+
+    def show_hover_preview(self):
+        self._hover_timer.stop()
+        if not self._hovered_file:
+            return
+            
+        full_path = IMAGES_DIR / self._hovered_file
+        if full_path.exists():
+            if self.preview_popup.show_image(full_path, self._hovered_file):
+                if self._hover_pos:
+                    self.preview_popup.move(
+                        self._hover_pos.x() + 15,
+                        self._hover_pos.y() + 15
+                    )
+                    self.preview_popup.show()
 
     def lineNumberAreaWidth(self):
         digits = len(str(self.blockCount()))
@@ -107,3 +278,14 @@ class LineNumberEditor(QPlainTextEdit):
         self.style().polish(self)
         self.highlightCurrentLine()
         self.lineNumberArea.update()
+
+        # Update enhancements themes
+        if hasattr(self, 'highlighter') and self.highlighter:
+            self.highlighter.is_dark = is_dark
+            self.highlighter.update_colors()
+            self.highlighter.setup_rules()
+            self.highlighter.rehighlight()
+            
+        if hasattr(self, '_completer') and self._completer:
+            self._completer.is_dark = is_dark
+            self._completer.update_style()
