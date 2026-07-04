@@ -3,7 +3,7 @@ import re
 import sys
 from pathlib import Path
 from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QCompleter
-from PyQt6.QtCore import Qt, QTimer, QStringListModel
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QSyntaxHighlighter, QTextCharFormat, QColor, QFont, QPixmap
 
 from i18n import t
@@ -47,12 +47,17 @@ def get_image_files():
 
 
 def parse_symbols(text):
+    # Clean the input text by stripping all comments and string literals
+    text = re.sub(r'#[^\n]*', '', text)
+    text = re.sub(r'"[^"\\]*(\\.[^"\\]*)*"', '', text)
+    text = re.sub(r"'[^'\\]*(\\.[^'\\]*)*'", '', text)
+
     symbols = set()
     funcs = re.findall(r'\bfunction\s+([a-zA-Z_]\w*)', text, re.IGNORECASE)
     symbols.update(funcs)
     
     vars1 = re.findall(r'\bset\s+([a-zA-Z_]\w*)', text, re.IGNORECASE)
-    vars2 = re.findall(r'\b([a-zA-Z_]\w*)\s*=', text)
+    vars2 = re.findall(r'\b([a-zA-Z_]\w*)\s*=(?!=)', text)
     symbols.update(vars1)
     symbols.update(vars2)
     
@@ -60,7 +65,7 @@ def parse_symbols(text):
     symbols.update(labels)
     
     # Filter out empty or keywords
-    symbols = {s for s in symbols if s and s not in ALL_STATIC_KEYWORDS}
+    symbols = {s for s in symbols if s and s.lower() not in ALL_STATIC_KEYWORDS}
     return list(symbols)
 
 
@@ -110,13 +115,6 @@ class DSLHighlighter(QSyntaxHighlighter):
     def setup_rules(self):
         self.rules.clear()
         
-        # Comments: #...
-        self.rules.append((re.compile(r'#[^\n]*'), self.comment_format))
-        
-        # Strings: "..." or '...'
-        self.rules.append((re.compile(r'"[^"\\]*(\\.[^"\\]*)*"'), self.string_format))
-        self.rules.append((re.compile(r"'[^'\\]*(\\.[^'\\]*)*'"), self.string_format))
-        
         # Labels: name:
         self.rules.append((re.compile(r'\b[a-zA-Z_]\w*(?=:)'), self.label_format))
         
@@ -137,6 +135,13 @@ class DSLHighlighter(QSyntaxHighlighter):
             
         # Math module functions
         self.rules.append((re.compile(r'\bmath\.\w+(?=\()'), self.func_format))
+        
+        # Comments: #...
+        self.rules.append((re.compile(r'#[^\n]*'), self.comment_format))
+        
+        # Strings: "..." or '...'
+        self.rules.append((re.compile(r'"[^"\\]*(\\.[^"\\]*)*"'), self.string_format))
+        self.rules.append((re.compile(r"'[^'\\]*(\\.[^'\\]*)*'"), self.string_format))
 
     def highlightBlock(self, text):
         for pattern, fmt in self.rules:
