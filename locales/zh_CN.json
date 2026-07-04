@@ -107,5 +107,6 @@
   "btn_rename_win": "✏ 重命名",
   "tooltip_rename_win": "更改已连接游戏窗口的标题",
   "msg_renamed_ok": "窗口已重命名为：{title}",
-  "msg_rename_no_window": "未连接任何游戏窗口。"
+  "msg_rename_no_window": "未连接任何游戏窗口。",
+  "image_preview_info": "<b>{filename}</b><br/>{w}x{h} 像素"
 }

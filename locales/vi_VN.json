@@ -107,5 +107,6 @@
   "btn_rename_win": "✏ Đặt tên",
   "tooltip_rename_win": "Đổi tiêu đề cửa sổ game đang kết nối",
   "msg_renamed_ok": "Đã đổi tên cửa sổ thành: {title}",
-  "msg_rename_no_window": "Chưa kết nối cửa sổ game nào."
+  "msg_rename_no_window": "Chưa kết nối cửa sổ game nào.",
+  "image_preview_info": "<b>{filename}</b><br/>{w}x{h} px"
 }

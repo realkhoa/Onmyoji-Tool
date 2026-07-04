@@ -107,5 +107,6 @@
   "btn_rename_win": "✏ Renommer",
   "tooltip_rename_win": "Changer le titre de la fenêtre de jeu connectée",
   "msg_renamed_ok": "Fenêtre renommée en : {title}",
-  "msg_rename_no_window": "Aucune fenêtre de jeu connectée."
+  "msg_rename_no_window": "Aucune fenêtre de jeu connectée.",
+  "image_preview_info": "<b>{filename}</b><br/>{w}x{h} px"
 }
